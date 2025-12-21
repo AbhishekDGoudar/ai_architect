@@ -37,3 +37,22 @@ class TokenMeter(BaseCallbackHandler):
         self.prompt_tokens += p
         self.completion_tokens += c
         self.total_tokens += t
+
+class LogCollector(BaseCallbackHandler):
+    """Captures agent actions for the UI log viewer."""
+    def __init__(self):
+        self.logs = [] # List of {"role": str, "message": str, "time": str}
+
+    def log(self, role: str, message: str):
+        timestamp = time.strftime("%H:%M:%S")
+        self.logs.append({"role": role, "message": message, "time": timestamp})
+
+    def on_llm_start(self, serialized: Dict[str, Any], prompts: List[str], **kwargs: Any) -> None:
+        """Runs when LLM starts generating."""
+        # Clean up the prompt preview for display
+        preview = prompts[0][:100].replace("\n", " ") + "..."
+        self.log("System", f"Sending prompt to LLM: {preview}")
+
+    def on_llm_end(self, response: LLMResult, **kwargs: Any) -> None:
+        """Runs when LLM finishes."""
+        self.log("System", "Received response from LLM.")

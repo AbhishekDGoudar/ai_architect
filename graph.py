@@ -1,10 +1,9 @@
-from typing import TypedDict, Optional
+from typing import TypedDict, Optional, List, Dict
 from langgraph.graph import StateGraph, END
 from schemas import HighLevelDesign, LowLevelDesign, JudgeVerdict
 import agents
 from model_factory import get_llm
-from callbacks import TokenMeter
-
+from callbacks import TokenMeter, LogCollector
 class AgentState(TypedDict):
     user_request: str
     provider: str
@@ -17,16 +16,28 @@ class AgentState(TypedDict):
     total_tokens: int
     prompt_tokens: int
     completion_tokens: int
+    logs: List[Dict]
 
 def manager_node(state: AgentState):
     llm = get_llm(state['provider'], state['api_key'], "smart")
     meter = TokenMeter()
-    hld = agents.engineering_manager(state['user_request'], llm, meter)
+    logger = LogCollector() # Initialize Logger
+    
+    logger.log("Manager", "Analyzing requirements...")
+    
+    # Pass BOTH callbacks
+    hld = agents.engineering_manager(
+        state['user_request'], llm, callbacks=[meter, logger]
+    )
+    
+    logger.log("Manager", "HLD Generated.")
+    
     return {
-        "hld": hld, "retry_count": 0,
+        "hld": hld, 
+        "retry_count": 0,
         "total_tokens": state.get("total_tokens", 0) + meter.total_tokens,
-        "prompt_tokens": state.get("prompt_tokens", 0) + meter.prompt_tokens,
-        "completion_tokens": state.get("completion_tokens", 0) + meter.completion_tokens
+        # Append new logs to existing logs
+        "logs": state.get("logs", []) + logger.logs 
     }
 
 def lead_node(state: AgentState):
