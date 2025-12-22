@@ -18,4 +18,15 @@ dependencies = [
     "python-dotenv>=1.2.1",
     "streamlit>=1.52.2",
     "watchdog>=6.0.0",
+    "giskard>=2.0.0", # NEW: AI Red Teaming
+    "diagrams>=0.23.4", # NEW: Python Diagrams as Code
+    "cookiecutter>=2.6.0", # NEW: Project Scaffolding
+    "langchain-chroma>=0.1.2", # NEW: Vector Store
+    "chromadb>=0.5.5",
+    "sentence-transformers>=3.0.0",
+    "unstructured[pdf]>=0.14.0", # NEW: PDF Loading
+    "langchain-huggingface>=1.2.0",
+    "langchain-community>=0.4.1",
+    "ddgs>=9.10.0",
 ]
+

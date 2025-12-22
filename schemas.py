@@ -1,9 +1,7 @@
 from pydantic import BaseModel, Field
 from typing import List, Optional, Dict, Literal
 
-# ==========================================
-# 🧠 SECTION 1: HIGH-LEVEL DESIGN (HLD)
-# ==========================================
+# --- EXISTING HLD/LLD SCHEMAS (Simplified for brevity, assume full versions present) ---
 
 class BusinessContext(BaseModel):
     problem_statement: str
@@ -15,7 +13,7 @@ class BusinessContext(BaseModel):
 
 class ArchitectureOverview(BaseModel):
     style: Literal["Microservices", "Event-Driven", "Monolith", "Hybrid", "Serverless"]
-    system_context_diagram_desc: str = Field(description="Textual description of the system context")
+    system_context_diagram_desc: str
     high_level_component_diagram_desc: str
     data_flow_desc: str
     external_dependencies: List[str]
@@ -23,13 +21,13 @@ class ArchitectureOverview(BaseModel):
 class ComponentSpec(BaseModel):
     name: str
     responsibility: str
-    communication_protocols: List[str] = Field(description="e.g. gRPC, REST, AMQP")
+    communication_protocols: List[str]
     sync_async_boundaries: str
     trust_boundaries: str
 
 class DataArchitecture(BaseModel):
-    data_ownership_map: Dict[str, str] = Field(description="Service -> Data Owned")
-    storage_choices: Dict[str, str] = Field(description="Service -> Tech (e.g. UserSvc -> PostgreSQL)")
+    data_ownership_map: Dict[str, str]
+    storage_choices: Dict[str, str]
     consistency_model: Literal["Strong", "Eventual", "Causal"]
     retention_archival_policy: str
     schema_evolution_strategy: str
@@ -43,8 +41,8 @@ class IntegrationStrategy(BaseModel):
 
 class NFRs(BaseModel):
     scalability_plan: str
-    availability_slo: str = Field(description="e.g. 99.99%")
-    latency_targets: str = Field(description="e.g. p99 < 200ms")
+    availability_slo: str
+    latency_targets: str
     security_requirements: List[str]
     reliability_targets: str
     maintainability_plan: str
@@ -57,7 +55,7 @@ class SecurityCompliance(BaseModel):
     secrets_management: str
     encryption_at_rest: str
     encryption_in_transit: str
-    compliance_standards: List[str] = Field(description="e.g. GDPR, HIPAA, SOC2")
+    compliance_standards: List[str]
 
 class ReliabilityResilience(BaseModel):
     failure_modes: List[str]
@@ -83,26 +81,9 @@ class DesignDecisions(BaseModel):
     trade_off_analysis: str
     rejected_alternatives: List[str]
 
-class ArchitectureDiagrams(BaseModel):
-    """
-    Dedicated model for PlantUML code.
-    """
-    system_context: str = Field(
-        description="PlantUML code (@startuml ... @enduml) for System Context (Component Diagram)."
-    )
-    container_diagram: str = Field(
-        description="PlantUML code (@startuml ... @enduml) for Containers using 'component' or 'package' syntax."
-    )
-    data_flow: str = Field(
-        description="PlantUML code (@startuml ... @enduml) for Sequence Diagram showing critical path."
-    )
-
 class HighLevelDesign(BaseModel):
-    """Items 1-11 of the Framework"""
     business_context: BusinessContext
     architecture_overview: ArchitectureOverview
-    # 🆕 INTEGRATION POINT
-    diagrams: Optional[ArchitectureDiagrams] = Field(description="Visual representations (PlantUML)")    
     core_components: List[ComponentSpec]
     data_architecture: DataArchitecture
     integration_strategy: IntegrationStrategy
@@ -113,10 +94,7 @@ class HighLevelDesign(BaseModel):
     deployment_ops: DeploymentOperations
     design_decisions: DesignDecisions
 
-# ==========================================
-# 🧠 SECTION 2: LOW-LEVEL DESIGN (LLD)
-# ==========================================
-
+# --- LLD SCHEMAS ---
 class InternalComponentDesign(BaseModel):
     component_name: str
     class_structure_desc: str
@@ -174,7 +152,6 @@ class DocumentationGovernance(BaseModel):
     adr_process: str
 
 class LowLevelDesign(BaseModel):
-    """Items 12-22 of the Framework"""
     detailed_components: List[InternalComponentDesign]
     api_design: List[APIEndpointDetail]
     data_model_deep_dive: List[DataModelDetail]
@@ -187,8 +164,32 @@ class LowLevelDesign(BaseModel):
     operational_readiness: OperationalReadiness
     documentation_governance: DocumentationGovernance
 
-# --- Quality Control ---
 class JudgeVerdict(BaseModel):
     is_valid: bool
     critique: str
     score: int
+
+# --- NEW: SCAFFOLDING & VISUALS ---
+
+class FileSpec(BaseModel):
+    filename: str
+    content: str
+    language: str
+
+class ScaffoldingSpec(BaseModel):
+    project_name: str
+    cookiecutter_url: Optional[str] = Field(description="URL to a relevant cookiecutter template")
+    folder_structure: List[str]
+    files: List[FileSpec]
+    setup_commands: List[str]
+
+class DiagramCode(BaseModel):
+    python_code: str = Field(description="Executable python code using 'diagrams' library.")
+    filename: str = Field(default="architecture_diagram")
+
+class RunMetrics(BaseModel):
+    security_score: float
+    security_reason: str
+    red_team_issues: List[str]
+    cost_estimate: float
+    iterations: int
