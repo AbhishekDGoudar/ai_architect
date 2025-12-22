@@ -1,13 +1,13 @@
 import streamlit as st
 import time
 import json
-from dotenv import load_dotenv
+import zlib
 import streamlit.components.v1 as components
+from dotenv import load_dotenv
 
 # Import our custom modules
 from graph import app_graph
-from storage import save_snapshot, list_snapshots, load_snapshot, delete_snapshot
-# Import the detailed schemas
+from storage import save_snapshot, list_snapshots, load_snapshot, delete_snapshot, check_snapshot_exists
 from schemas import HighLevelDesign, LowLevelDesign, JudgeVerdict
 
 # Load environment variables
@@ -26,6 +26,8 @@ if "api_key" not in st.session_state:
     st.session_state["api_key"] = ""
 if "current_result" not in st.session_state:
     st.session_state["current_result"] = None
+if "project_name" not in st.session_state:
+    st.session_state["project_name"] = ""
 
 # ==============================================================================
 # 🛠️ HELPER FUNCTIONS
@@ -40,7 +42,7 @@ def calculate_estimate(prompt_text, provider):
     # System Overhead (Manager, Security, Lead, Judge + Massive Schemas)
     system_overhead = 4500 
     
-    # Output Prediction (Verbose designs + Mermaid Code)
+    # Output Prediction (Verbose designs + PlantUML Code)
     estimated_output = 4000 
     
     total_est = input_tokens + system_overhead + estimated_output
@@ -55,31 +57,58 @@ def calculate_estimate(prompt_text, provider):
     
     return int(total_est), cost
 
-def render_mermaid(code: str, height=400, key=None):
-    """
-    Renders Mermaid code safely. Swallows errors to prevent UI crashes 
-    if the LLM generates invalid syntax.
-    """
-    if not code:
-        return
+# --- Diagram Rendering Logic (Hybrid) ---
 
-    # 1. Clean Markdown syntax (LLMs often wrap in ```mermaid ... ```)
+def base64_encode_plantuml(input_bytes):
+    """
+    Custom Base64 encoding for PlantUML (No padding, specific charset).
+    Maps 3 bytes to 4 characters from the custom PlantUML alphabet.
+    """
+    _b64_str = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz-_"
+    res = ""
+    i = 0
+    while i < len(input_bytes):
+        b1 = input_bytes[i]
+        b2 = input_bytes[i+1] if i+1 < len(input_bytes) else 0
+        b3 = input_bytes[i+2] if i+2 < len(input_bytes) else 0
+        
+        c1 = b1 >> 2
+        c2 = ((b1 & 0x3) << 4) | (b2 >> 4)
+        c3 = ((b2 & 0xF) << 2) | (b3 >> 6)
+        c4 = b3 & 0x3F
+        
+        res += _b64_str[c1] + _b64_str[c2]
+        if i+1 < len(input_bytes): res += _b64_str[c3]
+        if i+2 < len(input_bytes): res += _b64_str[c4]
+        i += 3
+    return res
+
+def render_plantuml(code: str, caption: str):
+    """Encodes and renders PlantUML via official server."""
+    try:
+        # Auto-fix: Ensure tags exist if missing
+        if "@startuml" not in code:
+            code = f"@startuml\n{code}\n@enduml"
+            
+        zlibbed = zlib.compress(code.encode('utf-8'))
+        compressed = zlibbed[2:-4] # Strip headers/checksum
+        encoded = base64_encode_plantuml(compressed)
+        url = f"http://www.plantuml.com/plantuml/svg/{encoded}"
+        st.image(url, caption=caption, use_container_width=True)
+    except Exception as e:
+        st.error(f"PlantUML Error: {e}")
+        st.code(code, language="text")
+
+def render_mermaid(code: str, height=400):
+    """Renders Mermaid.js via HTML injection."""
     clean_code = code.replace("```mermaid", "").replace("```", "").strip()
-    
-    # 2. Basic Validation: Check for known Mermaid diagram types
-    valid_starts = ["graph", "sequenceDiagram", "classDiagram", "stateDiagram", "erDiagram", "C4Context"]
-    if not any(clean_code.startswith(start) for start in valid_starts):
-        st.caption("⚠️ Diagram code invalid or not generated.")
-        return
-
-    # 3. HTML Injection for Rendering via CDN
     html_code = f"""
     <!DOCTYPE html>
     <html>
     <body>
         <script type="module">
             import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.esm.min.mjs';
-            mermaid.initialize({{ startOnLoad: true, theme: 'neutral' }});
+            mermaid.initialize({{ startOnLoad: true, theme: 'neutral', securityLevel: 'loose' }});
         </script>
         <div class="mermaid">
             {clean_code}
@@ -88,6 +117,28 @@ def render_mermaid(code: str, height=400, key=None):
     </html>
     """
     components.html(html_code, height=height, scrolling=True)
+
+def render_diagram(code: str, caption: str = "Diagram"):
+    """
+    HYBRID RENDERER: Detects format (PlantUML vs Mermaid) and renders appropriately.
+    """
+    if not code: return
+
+    # 1. Detect PlantUML indicators
+    if "@startuml" in code or "package " in code or "node " in code or "component " in code:
+        render_plantuml(code, caption)
+        
+    # 2. Detect Mermaid indicators
+    elif any(x in code for x in ["graph TD", "sequenceDiagram", "classDiagram", "C4Context"]):
+        render_mermaid(code)
+        
+    # 3. Fallback / Ambiguous
+    else:
+        # Try PlantUML as default if it looks like structured code
+        if "{" in code and "}" in code:
+             render_plantuml(code, caption)
+        else:
+             st.code(code, language="text")
 
 # ==============================================================================
 # SIDEBAR
@@ -140,6 +191,9 @@ with st.sidebar:
                     "metrics": data.get("metrics", {}),
                     "logs": data.get("logs", [])
                 }
+                # Load project name from file or filename
+                st.session_state["project_name"] = data.get("project_name", selected_file.replace(".json", ""))
+                
                 st.toast(f"Loaded '{selected_file}'", icon="✅")
                 time.sleep(0.5)
                 st.rerun()
@@ -166,8 +220,18 @@ st.markdown("Automated generation of **Enterprise-Grade** design documents cover
 # ------------------------------------------------------------------------------
 if st.session_state["current_result"] is None:
     
-    st.info("👋 Welcome! Describe the system you want to build below.")
+    st.info("👋 Welcome! Define your project below.")
     
+    # 1. Project Name Input
+    project_name = st.text_input(
+        "Project Name", 
+        value=st.session_state.get("project_name", ""),
+        placeholder="e.g., Enterprise URL Shortener",
+        help="This will be used as the filename for saving."
+    )
+    st.session_state["project_name"] = project_name
+    
+    # 2. Requirements Input
     user_prompt = st.text_area(
         "System Requirements:", 
         height=200, 
@@ -186,8 +250,18 @@ if st.session_state["current_result"] is None:
     run_btn = st.button("🚀 Generate Architecture", type="primary", use_container_width=True)
 
     if run_btn:
+        # Validation
         if not st.session_state["api_key"]:
             st.error(f"❌ Please enter an API Key for {provider.title()} in the sidebar.")
+            st.stop()
+            
+        if not project_name.strip():
+            st.error("❌ Please provide a Project Name.")
+            st.stop()
+
+        # Check if file exists to prevent accidental overwrites
+        if check_snapshot_exists(project_name):
+            st.error(f"⚠️ A project named '{project_name}' already exists! Please choose a different name or delete the existing one.")
             st.stop()
 
         with st.status(f"Running Architect Pipeline on {provider.title()}...", expanded=True) as status:
@@ -212,7 +286,7 @@ if st.session_state["current_result"] is None:
                     "verdict": final_state['verdict'],
                     "metrics": {
                         "total": final_state['total_tokens'],
-                        "prompt": 0, # Simplified for display
+                        "prompt": 0, # Simplified
                         "completion": 0
                     },
                     "logs": final_state['logs']
@@ -238,17 +312,20 @@ else:
     col_back, col_save, col_spacer = st.columns([1, 1, 4])
     if col_back.button("⬅️ Start New Run"):
         st.session_state["current_result"] = None
+        st.session_state["project_name"] = ""
         st.rerun()
         
-    if col_save.button("💾 Save Snapshot"):
-        filename = save_snapshot("Run", {
+    if col_save.button("💾 Save Project"):
+        p_name = st.session_state.get("project_name", "Untitled")
+        filename = save_snapshot(p_name, {
             "user_request": "Snapshot", 
             "hld": hld.model_dump(), "lld": lld.model_dump(), "verdict": verdict.model_dump(),
             "metrics": metrics, "logs": logs
         })
-        st.toast(f"Saved to {filename}", icon="✅")
+        st.toast(f"Saved project to {filename}", icon="✅")
 
     st.divider()
+    st.subheader(f"Project: {st.session_state.get('project_name', 'Untitled')}")
 
     # --- Metrics & Logs ---
     with st.expander("📈 Execution Metrics & Logs", expanded=False):
@@ -286,24 +363,25 @@ else:
         # 2. Architecture Overview
         with st.container(border=True):
             st.header("2. Architecture Overview")
-            
-            # Text Descriptions (Always safe to render)
             st.markdown(f"**Style:** `{hld.architecture_overview.style}`")
-            st.markdown(f"**Context Desc:** {hld.architecture_overview.system_context_diagram_desc}")
-            st.markdown(f"**Data Flow Desc:** {hld.architecture_overview.data_flow_desc}")
+            
+            # Text Descriptions
+            st.markdown(f"**Context:** {hld.architecture_overview.system_context_diagram_desc}")
+            st.markdown(f"**Data Flow:** {hld.architecture_overview.data_flow_desc}")
+            st.markdown(f"**Dependencies:** {', '.join(hld.architecture_overview.external_dependencies)}")
 
-            # Diagrams (Render if valid)
+            # 🛠️ HYBRID RENDERING (PlantUML / Mermaid)
             if hld.diagrams:
                 st.divider()
                 st.subheader("📐 Architecture Diagrams")
                 t_ctx, t_cont, t_seq = st.tabs(["System Context", "Containers", "Data Flow"])
                 
                 with t_ctx:
-                    render_mermaid(hld.diagrams.system_context, height=500)
+                    render_diagram(hld.diagrams.system_context, "System Context")
                 with t_cont:
-                    render_mermaid(hld.diagrams.container_diagram, height=500)
+                    render_diagram(hld.diagrams.container_diagram, "Container Diagram")
                 with t_seq:
-                    render_mermaid(hld.diagrams.data_flow, height=600)
+                    render_diagram(hld.diagrams.data_flow, "Data Flow Sequence")
             else:
                 st.caption("No diagrams generated for this run.")
 
@@ -411,9 +489,10 @@ else:
         
         with t2:
             st.subheader("Authentication Flow")
-            # Render LLD Diagram safely
-            render_mermaid(lld.security_implementation.auth_flow_diagram_desc)
             
+            # Hybrid Rendering for Security Flow
+            render_diagram(lld.security_implementation.auth_flow_diagram_desc, "Auth Flow")
+                
             st.markdown(f"**Input Validation:**\n{lld.security_implementation.input_validation_rules}")
             st.markdown(f"**Token Lifecycle:** {lld.security_implementation.token_lifecycle}")
         

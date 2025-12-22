@@ -9,45 +9,48 @@ def _to_dict(obj: Any) -> Dict:
     """Helper to safely convert Pydantic models or Dicts to JSON-serializable dicts."""
     if obj is None:
         return None
-    # Check for Pydantic V2
     if hasattr(obj, "model_dump"):
         return obj.model_dump()
-    # Check for Pydantic V1
     if hasattr(obj, "dict") and callable(obj.dict):
         return obj.dict()
-    # Already a dict
     return obj
 
-def save_snapshot(project_name: str, state: Dict):
-    """Saves the final state to a JSON file."""
+def get_file_path(project_name: str) -> str:
+    """Generates the standardized file path for a project."""
     if not os.path.exists(SNAPSHOT_DIR):
         os.makedirs(SNAPSHOT_DIR)
     
-    # Create a unique filename
-    timestamp = int(time.time())
-    # Sanitize project name
+    # Sanitize: Allow only alphanumerics, spaces, dashes, underscores
     safe_name = "".join([c for c in project_name if c.isalnum() or c in (' ', '-', '_')]).strip()
     if not safe_name:
-        safe_name = "project"
-        
-    filename = f"{safe_name}_{timestamp}.json"
-    full_path = os.path.join(SNAPSHOT_DIR, filename)
+        safe_name = "untitled_project"
     
-    # Serialize data safely
+    return os.path.join(SNAPSHOT_DIR, f"{safe_name}.json")
+
+def check_snapshot_exists(project_name: str) -> bool:
+    """Checks if a project file already exists."""
+    filepath = get_file_path(project_name)
+    return os.path.exists(filepath)
+
+def save_snapshot(project_name: str, state: Dict):
+    """Saves the state to a JSON file named after the project."""
+    filepath = get_file_path(project_name)
+    
     data_to_save = {
+        "project_name": project_name, # Store the real name
         "user_request": state.get("user_request", ""),
         "hld": _to_dict(state.get("hld")),
         "lld": _to_dict(state.get("lld")),
         "verdict": _to_dict(state.get("verdict")),
         "metrics": state.get("metrics", {}),
         "logs": state.get("logs", []),
-        "timestamp": timestamp
+        "timestamp": int(time.time())
     }
     
     try:
-        with open(full_path, "w", encoding="utf-8") as f:
+        with open(filepath, "w", encoding="utf-8") as f:
             json.dump(data_to_save, f, indent=2)
-        return filename
+        return os.path.basename(filepath)
     except Exception as e:
         print(f"Error saving snapshot: {e}")
         return None
@@ -59,7 +62,6 @@ def list_snapshots() -> List[str]:
         
     try:
         files = [f for f in os.listdir(SNAPSHOT_DIR) if f.endswith(".json")]
-        # Sort by modification time (newest first)
         files.sort(key=lambda x: os.path.getmtime(os.path.join(SNAPSHOT_DIR, x)), reverse=True)
         return files
     except OSError:

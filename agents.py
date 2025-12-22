@@ -7,17 +7,19 @@ def engineering_manager(user_request: str, llm: BaseChatModel, meter: TokenMeter
     You are a Principal Software Architect. 
     Design a robust High Level Design (HLD) covering points 1 to 11 of our standard framework.
     
-    INSTRUCTIONS
-    1 Fill the architecture_overview with clear TEXT descriptions
-    2 Fill the new diagrams section with valid MERMAID JS code
-       For Context Use graph TD
-       For Data Flow Use sequenceDiagram
+    INSTRUCTIONS FOR DIAGRAMS (PlantUML):
+    1. System Context: Use 'component' diagram syntax.
+    2. Container Diagram: Use 'package' or 'node' syntax to show boundaries.
+    3. Data Flow: Use 'sequence' diagram syntax.
+    4. ALWAYS wrap code in @startuml and @enduml tags.
     
-    Prioritize Scalability Security and Cost
+    INSTRUCTIONS FOR CONTENT:
+    - Fill the 'architecture_overview' with clear TEXT descriptions.
+    - Prioritize Scalability, Security, and Cost.
     """
     
     if feedback:
-        system_msg += f"\n\n⚠️ PREVIOUS REJECTION FEEDBACK: {feedback}\nFix the design or diagrams based on this feedback."
+        system_msg += f"\n\n⚠️ PREVIOUS REJECTION FEEDBACK: {feedback}\nFix the design or diagrams."
 
     structured_llm = llm.with_structured_output(HighLevelDesign)
     
@@ -25,6 +27,36 @@ def engineering_manager(user_request: str, llm: BaseChatModel, meter: TokenMeter
         [("system", system_msg), ("human", user_request)],
         config={"callbacks": [meter]}
     )
+
+
+
+
+
+# def engineering_manager(user_request: str, llm: BaseChatModel, meter: TokenMeter, feedback: str = ""):
+#     system_msg = """
+#     You are a Principal Software Architect. 
+#     Design a robust High Level Design (HLD) covering points 1 to 11 of our standard framework.
+    
+#     INSTRUCTIONS FOR DIAGRAMS (Crucial):
+#     You MUST generate valid Mermaid.js code for the 'diagrams' section.
+#     1. System Context: Use 'graph TD'.
+#     2. Container Diagram: Use 'graph TD' with 'subgraph' blocks to show boundaries.
+#     3. Data Flow: Use 'sequenceDiagram' to show the flow between components.
+    
+#     INSTRUCTIONS FOR CONTENT:
+#     - Fill the 'architecture_overview' with clear TEXT descriptions (do not put mermaid code there).
+#     - Prioritize Scalability, Security, and Cost.
+#     """
+    
+#     if feedback:
+#         system_msg += f"\n\n⚠️ PREVIOUS REJECTION FEEDBACK: {feedback}\nFix the design or diagrams based on this feedback."
+
+#     structured_llm = llm.with_structured_output(HighLevelDesign)
+    
+#     return structured_llm.invoke(
+#         [("system", system_msg), ("human", user_request)],
+#         config={"callbacks": [meter]}
+#     )
 
 def security_specialist(hld: HighLevelDesign, llm: BaseChatModel, meter: TokenMeter):
     hld_context = hld.model_dump_json(indent=2)
@@ -52,7 +84,7 @@ def team_lead(hld: HighLevelDesign, llm: BaseChatModel, meter: TokenMeter):
     You are a Senior Team Lead. 
     Based on the HLD, generate the Low Level Design (LLD) covering points 12 to 22.
     
-    Focus on Internal Class Design API Contracts Data Models (Indexes/Constraints) and Failure Modes.
+    Focus on Internal Class Design, API Contracts, Data Models (Indexes/Constraints), and Failure Modes.
     
     ARCHITECT'S DESIGN: 
     {hld_context}
@@ -69,15 +101,14 @@ def architecture_judge(hld: HighLevelDesign, lld: LowLevelDesign, llm: BaseChatM
     You are a QA Architect. 
     Verify consistency between HLD and LLD.
     
-    CRITICAL DIAGRAM VERIFICATION
-    1 Check the 'diagrams' field in HLD.
-    2 Verify the Mermaid JS syntax is valid.
-    3 Ensure the text labels in the diagrams match the component names.
-    4 If the Mermaid code looks broken or incomplete mark is_valid as False.
+    CRITICAL DIAGRAM VERIFICATION (PlantUML):
+    1. Check if 'diagrams' fields contain '@startuml' and '@enduml'.
+    2. Verify the PlantUML syntax is logically valid.
+    3. If any diagram is missing or invalid, mark is_valid=False.
 
-    GENERAL CHECKS
-    1 LLD components match HLD components.
-    2 Security implementation in LLD matches HLD compliance rules.
+    GENERAL CHECKS:
+    1. LLD components match HLD components.
+    2. Security implementation in LLD matches HLD compliance rules.
     """
     structured_llm = llm.with_structured_output(JudgeVerdict)
     

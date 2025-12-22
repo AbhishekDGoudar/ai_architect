@@ -85,17 +85,16 @@ class DesignDecisions(BaseModel):
 
 class ArchitectureDiagrams(BaseModel):
     """
-    Dedicated model for Mermaid.js code. 
-    Strictly code only, no markdown descriptions.
+    Dedicated model for PlantUML code.
     """
     system_context: str = Field(
-        description="Mermaid code (graph TD) for System Context. Start with 'graph TD' or 'C4Context'."
+        description="PlantUML code (@startuml ... @enduml) for System Context (Component Diagram)."
     )
     container_diagram: str = Field(
-        description="Mermaid code (graph TD) for Containers/Components. Use subgraphs for boundaries."
+        description="PlantUML code (@startuml ... @enduml) for Containers using 'component' or 'package' syntax."
     )
     data_flow: str = Field(
-        description="Mermaid code (sequenceDiagram) for critical path data flow."
+        description="PlantUML code (@startuml ... @enduml) for Sequence Diagram showing critical path."
     )
 
 class HighLevelDesign(BaseModel):
@@ -103,7 +102,7 @@ class HighLevelDesign(BaseModel):
     business_context: BusinessContext
     architecture_overview: ArchitectureOverview
     # 🆕 INTEGRATION POINT
-    diagrams: Optional[ArchitectureDiagrams] = Field(description="Visual representations of the system")
+    diagrams: Optional[ArchitectureDiagrams] = Field(description="Visual representations (PlantUML)")    
     core_components: List[ComponentSpec]
     data_architecture: DataArchitecture
     integration_strategy: IntegrationStrategy
