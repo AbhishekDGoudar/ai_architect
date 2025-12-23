@@ -6,12 +6,15 @@ from typing import List, Dict, Any
 SNAPSHOT_DIR = "snapshots"
 
 def _to_dict(obj: Any) -> Dict:
-    """Helper to safely convert Pydantic models or Dicts to JSON-serializable dicts."""
+    """
+    Helper to safely convert Pydantic models to JSON-serializable dicts.
+    Handles nested models automatically via model_dump().
+    """
     if obj is None:
         return None
     if hasattr(obj, "model_dump"):
         return obj.model_dump()
-    if hasattr(obj, "dict") and callable(obj.dict):
+    if hasattr(obj, "dict") and callable(obj.dict):  # Support for older Pydantic V1
         return obj.dict()
     return obj
 
@@ -37,11 +40,20 @@ def save_snapshot(project_name: str, state: Dict):
     filepath = get_file_path(project_name)
     
     data_to_save = {
-        "project_name": project_name, # Store the real name
+        "project_name": project_name,
         "user_request": state.get("user_request", ""),
+        # Core Artifacts (Pydantic Models)
         "hld": _to_dict(state.get("hld")),
         "lld": _to_dict(state.get("lld")),
         "verdict": _to_dict(state.get("verdict")),
+        
+        # v2.0 Artifacts
+        "scaffold": _to_dict(state.get("scaffold")),
+        "diagram_code": _to_dict(state.get("diagram_code")), # Simplified: _to_dict handles the logic
+        "diagram_path": state.get("diagram_path"),
+        "diagram_validation": _to_dict(state.get("diagram_validation")),
+        
+        # Metrics & Logs
         "metrics": state.get("metrics", {}),
         "logs": state.get("logs", []),
         "timestamp": int(time.time())
@@ -62,6 +74,7 @@ def list_snapshots() -> List[str]:
         
     try:
         files = [f for f in os.listdir(SNAPSHOT_DIR) if f.endswith(".json")]
+        # Sort by modification time (Newest first)
         files.sort(key=lambda x: os.path.getmtime(os.path.join(SNAPSHOT_DIR, x)), reverse=True)
         return files
     except OSError:
@@ -74,7 +87,9 @@ def load_snapshot(filename: str) -> Dict:
         raise FileNotFoundError(f"Snapshot {filename} not found.")
         
     with open(filepath, "r", encoding="utf-8") as f:
-        return json.load(f)
+        data = json.load(f)
+        
+    return data
 
 def delete_snapshot(filename: str) -> bool:
     """Deletes a snapshot file."""

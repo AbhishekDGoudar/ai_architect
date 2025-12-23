@@ -9,7 +9,7 @@ def get_llm(provider: str, api_key: str, model_type: str = "smart"):
     """
     
     models = {
-        "openai": {"smart": "gpt-4o", "fast": "gpt-4o-mini"},
+        "openai": {"smart": "gpt-5-nano", "fast": "gpt-4.1-mini"},
         "gemini": {"smart": "gemini-2.5-flash", "fast": "gemini-2.5-flash-lite"},
         "claude": {"smart": "claude-3-5-sonnet-20240620", "fast": "claude-3-haiku-20240307"},
         "ollama": {"smart": "qwen3:8b", "fast": "phi4-mini:latest"}
