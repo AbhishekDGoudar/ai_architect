@@ -1,46 +1,44 @@
 from langchain_core.language_models import BaseChatModel
-from schemas import (HighLevelDesign, LowLevelDesign, JudgeVerdict, 
-                     SecurityCompliance, ScaffoldingSpec, ArchitectureDiagrams,
-                     RefinedDesign, DiagramValidationResult)
+from typing import List, Optional
+
+# Import the strictly required unified schemas
+from schemas import (
+    HighLevelDesign, LowLevelDesign, JudgeVerdict, 
+    SecurityCompliance, ArchitectureDiagrams, 
+    RefinedDesign, DiagramValidationResult
+)
 from callbacks import TokenMeter
-from rag import kb  # Assuming 'rag' module exists and has the `kb` object
-from typing import List, Optional, Dict, Literal, Any
+# Import the knowledge engine
+from rag import knowledge as kb 
+
+# ==========================================
+# 🤖 AGENTS
+# ==========================================
 
 def engineering_manager(user_request: str, llm: BaseChatModel, meter: TokenMeter, feedback: str = ""):
-    """
-    Engineering Manager Agent:
-    - Handles the generation of High-Level Design (HLD).
-    - Uses RAG lookup for additional knowledge.
-    """
+    """Generates the initial High-Level Design (HLD)."""
     try:
-        context = kb.search(user_request)
+        context = kb.search(user_request, use_web=True, use_kb=True)
     except Exception:
         context = "No knowledge base context available."
     
     system_msg = f"""
     You are a Principal Software Architect. 
-    Design a robust High Level Design (HLD) covering points 1 to 11.
+    Design a robust High Level Design (HLD) covering the 11-point framework.
 
-    **IMPORTANT**:
-    - Ensure **documentation** for each section.
-    - Provide **examples** for each component and step.
-    - Each decision must be justified based on **reputable sources**.
+    COMPLIANCE RULES:
+    1. EVERY field in the schema is REQUIRED. 
+    2. Do NOT provide null or empty strings. If a field doesn't apply, use "N/A".
+    3. For 'tech_stack', provide a LIST of objects with 'layer' and 'technology'.
+    4. For 'storage_choices', provide a LIST of objects with 'component' and 'technology'.
+    5. 'diagrams' and 'citations' are MANDATORY. Use your internal knowledge for citations if web data is low.
 
-    RELEVANT KNOWLEDGE BASE:
+    RELEVANT CONTEXT:
     {context}
-
-    STYLE & TONE GUIDELINES:
-    1. **Professional & Technical**: Avoid buzzwords.
-    2. **Citations**: Cite reputable architecture books/papers.
-
-    INSTRUCTIONS:
-    - Fill 'business_context' (Version, Stakeholders, Change Log).
-    - Ensure clear 'architecture_overview'.
-    - Focus on Scalability, Security, and Cost.
     """
     
     if feedback:
-        system_msg += f"\n\n⚠️ PREVIOUS REJECTION FEEDBACK: {feedback}\nFix the design."
+        system_msg += f"\n\n⚠️ CRITICAL FEEDBACK FROM PREVIOUS RUN: {feedback}\nYou MUST address these issues in this iteration."
 
     structured_llm = llm.with_structured_output(HighLevelDesign)
     
@@ -50,76 +48,64 @@ def engineering_manager(user_request: str, llm: BaseChatModel, meter: TokenMeter
     )
 
 def security_specialist(hld: HighLevelDesign, llm: BaseChatModel, meter: TokenMeter):
-    """
-    Security Specialist Agent:
-    - Reviews and refines the security compliance part of the HLD.
-    """
+    """Refines the Security Compliance section of the HLD."""
     hld_context = hld.model_dump_json(indent=2)
     system_msg = f"""
-    You are a Security Specialist (InfoSec).
-    Review the 'security_compliance' section of the HLD.
-    Refine it to meet strict standards (GDPR, SOC2, Zero Trust).
-
-    **IMPORTANT**:
-    - Enforce **GDPR** and **Zero Trust**.
-    - Cite **NIST**, **ISO** standards.
-
-    CURRENT HLD:
+    You are a Security Specialist. Review and harden the 'security_compliance' section.
+    Enforce GDPR, SOC2, and Zero Trust principles.
+    
+    REQUIREMENT: You must return a fully populated SecurityCompliance object. 
+    No optional fields are allowed.
+    
+    CURRENT HLD FOR REVIEW:
     {hld_context}
     """
     
     structured_llm = llm.with_structured_output(SecurityCompliance)
-    
     return structured_llm.invoke(
-        [("system", system_msg), ("human", "Harden this security design.")],
+        [("system", system_msg), ("human", "Harden security strategy.")],
         config={"callbacks": [meter]}
     )
 
 def team_lead(hld: HighLevelDesign, llm: BaseChatModel, meter: TokenMeter):
-    """
-    Team Lead Agent:
-    - Generates Low-Level Design (LLD) from HLD.
-    """
+    """Generates the Low-Level Design (LLD)."""
     hld_context = hld.model_dump_json(indent=2)
     system_msg = f"""
-    You are a Senior Team Lead. 
-    Generate Low Level Design (LLD) (Points 12-22).
-    Focus on **Class Design**, **API Contracts**, and **Data Models**.
-
-    **IMPORTANT**:
-    - **Versioning** of components.
-    - **Error Handling** details.
-    - **Integration** specifics.
-
-    ARCHITECT'S DESIGN: 
+    You are a Senior Team Lead. Generate the Low Level Design (LLD) based on the HLD.
+    
+    COMPLIANCE RULES:
+    1. Fill EVERY field. Use "N/A" for text or [] for lists if no data exists.
+    2. Focus on API Contracts, Data Models, and Component Internals.
+    3. Ensure 'citations' are included for technical choices.
+    
+    HLD ARCHITECTURE TO IMPLEMENT: 
     {hld_context}
     """
     structured_llm = llm.with_structured_output(LowLevelDesign)
     
     return structured_llm.invoke(
-        [("system", system_msg), ("human", "Generate LLD")],
+        [("system", system_msg), ("human", "Generate detailed LLD.")],
         config={"callbacks": [meter]}
     )
 
 def visual_architect(hld: HighLevelDesign, llm: BaseChatModel, meter: TokenMeter):
-    """
-    Visual Architect Agent:
-    - Generates the Python code for diagrams using the 'diagrams' library.
-    """
-    hld_summary = hld.model_dump_json(include={'core_components', 'architecture_overview'})
+    """Generates Python code for Architecture Diagrams."""
+    hld_summary = hld.model_dump_json(include={'core_components', 'architecture_overview', 'data_architecture'})
     
     system_msg = f"""
     You are a Visualization Expert.
-    Generate VALID PYTHON CODE using the 'diagrams' library for 3 diagrams:
-    1. System Context
-    2. Container Diagram
-    3. Data Flow
+    Generate VALID PYTHON CODE using the 'diagrams' library for 3 distinct diagrams.
 
-    STRICT RULES:
-    1. **No Pseudo-code**: Use valid classes (e.g. `from diagrams.aws.compute import EC2`).
-    2. **Context Managers**: Use `with Diagram("Name", show=False):` for each.
-    3. **Output**: Return strings containing the executable python code.
+    DIAGRAMS REQUIRED:
+    1. System Context: Show users and external systems.
+    2. Container Diagram: Show services, databases, and queues.
+    3. Data Flow: Show sensitive data paths and trust boundaries.
 
+    RULES:
+    - Use standard imports (e.g., `from diagrams.aws.compute import EC2`).
+    - Use common classes like APIGateway, PostgreSQL, Redis, React, etc.
+    - Return a valid 'ArchitectureDiagrams' object with all 3 code strings.
+    
     CONTEXT:
     {hld_summary}
     """
@@ -130,20 +116,13 @@ def visual_architect(hld: HighLevelDesign, llm: BaseChatModel, meter: TokenMeter
     )
 
 def architecture_judge(hld: HighLevelDesign, lld: LowLevelDesign, llm: BaseChatModel, meter: TokenMeter):
-    """
-    Architecture Judge Agent (Iteration-aware).
-    """
+    """Evaluates consistency between HLD and LLD."""
     system_msg = """
-    You are a QA Architect. Evaluate HLD and LLD.
+    You are a QA Architect. Evaluate the HLD and LLD for consistency and gaps.
     
-    CATEGORIES TO CHECK:
-    1. HLD ↔ LLD consistency
-    2. Security gaps
-    3. NFR mismatches
-    4. Diagram consistency
-    5. Testing coverage
-
-    OUTPUT: JudgeVerdict object.
+    STRICT REQUIREMENT: 
+    Every list in the schema (e.g., security_gaps, diagram_issues) must be present. 
+    If no issues are found for a category, return an empty list [].
     """
     structured_llm = llm.with_structured_output(JudgeVerdict)
     
@@ -154,76 +133,42 @@ def architecture_judge(hld: HighLevelDesign, lld: LowLevelDesign, llm: BaseChatM
     )
 
 def reiteration_agent(judge: JudgeVerdict, hld: HighLevelDesign, lld: LowLevelDesign, llm: BaseChatModel, meter: TokenMeter):
-    """
-    Automatically refines HLD and LLD based on JudgeVerdict recommendations.
-    """
+    """Refines the design based on the Judge's critique."""
     system_msg = f"""
     You are a Principal Software Architect.
-    Review the Judge's critique and IMPROVE the HLD and LLD.
-
+    Review the Judge's critique and IMPROVE both the HLD and LLD.
+    
     CRITIQUE: {judge.critique}
-    ISSUES: {judge.hld_lld_mismatch}, {judge.security_gaps}, {judge.nfr_mismatches}
-
-    Return a `RefinedDesign` object containing the full updated HLD and LLD.
+    SPECIFIC ISSUES: {judge.hld_lld_mismatch}, {judge.security_gaps}
     """
-    # Use the wrapper class defined at the top
     structured_llm = llm.with_structured_output(RefinedDesign)
     
     return structured_llm.invoke(
-        [("system", system_msg), ("human", "Refine designs iteratively.")],
+        [("system", system_msg), ("human", "Refine the complete design iteratively.")],
         config={"callbacks": [meter]}
     )
 
 def diagram_validator(hld: HighLevelDesign, llm: BaseChatModel, meter: TokenMeter):
-    """
-    Validates syntax and consistency of diagram code.
-    """
+    """Validates the generated diagram code."""
     if not hld.diagrams:
-        diagram_code = "No diagrams found."
+        diagram_content = "No diagrams were generated."
     else:
-        diagram_code = f"""
-        System Context: {hld.diagrams.system_context}
-        Container: {hld.diagrams.container_diagram}
-        Data Flow: {hld.diagrams.data_flow}
+        diagram_content = f"""
+        System Context Code: {hld.diagrams.system_context}
+        Container Code: {hld.diagrams.container_diagram}
         """
     
+    hld_components = [c.name for c in hld.core_components]
+    
     system_msg = f"""
-    You are a Diagram QA Architect.
-    1. Verify Python syntax for `diagrams` library.
-    2. Ensure nodes match HLD components.
-    3. Identify missing/invalid elements.
+    You are a Diagram QA Expert. 
+    1. Check for Python syntax errors in the 'diagrams' library code.
+    2. Ensure these HLD components are present in the diagrams: {hld_components}.
     """
     
-    # Use wrapper class
     structured_llm = llm.with_structured_output(DiagramValidationResult)
     
     return structured_llm.invoke(
-        [("system", system_msg), ("human", diagram_code)],
-        config={"callbacks": [meter]}
-    )
-
-def scaffold_architect(hld: HighLevelDesign, lld: LowLevelDesign, llm: BaseChatModel, meter: TokenMeter):
-    """
-    Scaffold Architect Agent.
-    """
-    hld_summary = hld.model_dump_json(include={'business_context', 'tech_stack'})
-    lld_summary = lld.model_dump_json(include={'detailed_components', 'api_design'})
-    
-    system_msg = f"""
-    You are a DevOps Engineer.
-    Generate FILE STRUCTURE and STARTER CODE.
-
-    1. Define folder structure.
-    2. Create 'README.md', 'requirements.txt'.
-    3. Create stub files.
-
-    HLD: {hld_summary}
-    LLD: {lld_summary}
-    """
-    
-    structured_llm = llm.with_structured_output(ScaffoldingSpec)
-    
-    return structured_llm.invoke(
-        [("system", system_msg), ("human", "Scaffold this project.")],
+        [("system", system_msg), ("human", diagram_content)],
         config={"callbacks": [meter]}
     )
