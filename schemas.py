@@ -12,6 +12,8 @@ class Citation(BaseModel):
 class TechStackItem(BaseModel):
     layer: str = Field(description="The architectural layer (e.g., 'Frontend').")
     technology: str = Field(description="The chosen technology (e.g., 'React').")
+    recommended_version: Optional[str] = None
+    rationale: Optional[str] = None
 
 class DataOwnerItem(BaseModel):
     component: str = Field(description="The service name.")
@@ -43,9 +45,9 @@ class BusinessContext(BaseModel):
         return v
 
 class ArchitectureDiagrams(BaseModel):
-    system_context: str = Field(description="Python code for System Context Diagram.")
-    container_diagram: str = Field(description="Python code for Container Diagram.")
-    data_flow: str = Field(description="Python code for Data Flow Diagram.")
+    system_context: str = Field(description="Python code with 'diagrams' library for System Context Diagram.")
+    container_diagram: str = Field(description="Python code with 'diagrams' library for Container Diagram.")
+    data_flow: str = Field(description="Python code with 'diagrams' library for Data Flow Diagram.")
 
     @field_validator('system_context', 'container_diagram')
     def code_must_be_valid(cls, v):
@@ -53,15 +55,32 @@ class ArchitectureDiagrams(BaseModel):
             raise ValueError("Code must use the 'diagrams' library.")
         return v
 
+# HLD Additions
+class LayerTechRationale(BaseModel):
+    layer: str = Field(description="Name of the architecture layer, e.g., 'Frontend', 'Backend'.")
+    technology: str = Field(description="Technology used in this layer.")
+    rationale: str = Field(description="Reason for choosing this technology over alternatives.")
+    tradeoffs: str = Field(description="Key trade-offs considered for this layer's technology.")
+
+class EventFlowDescription(BaseModel):
+    description: str = Field(description="Textual description of async/event-driven communication patterns.")
+    components_involved: List[str] = Field(description="List of components involved in the flow.")
+    event_types: List[str] = Field(description="Types of events/messages being exchanged.")
+
+class KPIMetric(BaseModel):
+    goal: str = Field(description="Business goal or objective this KPI maps to.")
+    metric: str = Field(description="Quantitative or qualitative metric for tracking success.")
+    target_value: Optional[str] = Field(description="Target value or threshold, if applicable.")
+
 class ArchitectureOverview(BaseModel):
-    # 'style' converted to str to reduce schema complexity for Gemini
     style: str = Field(description="Architecture style (e.g., 'Microservices', 'Event-Driven', 'Monolith').")
-    system_context_diagram_desc: str
-    high_level_component_diagram_desc: str
-    data_flow_desc: str
     external_interfaces: List[str]
     user_stories: List[str]
     tech_stack: List[TechStackItem]
+    diagrams: List[ArchitectureDiagrams] = None
+    layer_tech_rationale: List[LayerTechRationale] = Field(default_factory=list, description="Rationale for each layer's technology.")
+    event_flows: List[EventFlowDescription] = Field(default_factory=list, description="Description of event-driven flows between components.")
+    kpis: List[KPIMetric] = Field(default_factory=list, description="KPIs mapped to business goals.")
 
     @field_validator('tech_stack')
     def tech_stack_check(cls, v):
@@ -83,7 +102,6 @@ class ComponentSpec(BaseModel):
 class DataArchitecture(BaseModel):
     data_ownership_map: List[DataOwnerItem]
     storage_choices: List[StorageChoiceItem]
-    # Enums converted to descriptive strings to prevent "Too Many States" error
     data_classification: str = Field(description="e.g., 'Public', 'Internal', 'Confidential', 'Restricted'")
     consistency_model: str = Field(description="e.g., 'Strong', 'Eventual', 'Causal'")
     data_retention_policy: str
@@ -160,13 +178,41 @@ class HighLevelDesign(BaseModel):
     observability: ObservabilityStrategy
     deployment_ops: DeploymentOperations
     design_decisions: DesignDecisions
-    # Optional to prevent validation crash if Manager returns None
-    diagrams: Optional[ArchitectureDiagrams] = None
     citations: List[Citation]
 
 # ==========================================
 # 🧠 SECTION 2: LOW-LEVEL DESIGN (LLD)
 # ==========================================
+
+class MethodDetail(BaseModel):
+    method_name: str = Field(description="Name of the method/function.")
+    purpose: str = Field(description="Short description of what this method does.")
+    input_params: List[str] = Field(description="List of input parameters and types.")
+    output: str = Field(description="Expected output or return type.")
+    algorithm_summary: str = Field(description="Brief description of the core logic/algorithm.")
+
+class DataAccessPattern(BaseModel):
+    entity: str = Field(description="Entity or table being accessed.")
+    pattern_description: str = Field(description="How data is typically accessed, queried, or updated.")
+    example_queries: List[str] = Field(default_factory=list, description="Optional example queries illustrating usage.")
+    lifecycle_notes: str = Field(description="Lifecycle considerations for this data (e.g., retention, archival).")
+
+class FailureHandlingFlow(BaseModel):
+    component: str = Field(description="Component name.")
+    flow_description: str = Field(description="Step-by-step failure handling flow.")
+    retry_strategy: str = Field(description="Retry/backoff strategy for failures.")
+    fallback_mechanisms: str = Field(description="Fallback or mitigation strategies when retries fail.")
+
+class LoadBenchmarkTarget(BaseModel):
+    component: str = Field(description="Component/service name.")
+    expected_load: str = Field(description="Expected concurrent requests, transactions per second, or data volume.")
+    benchmark_metric: str = Field(description="Performance metric used for benchmarking (latency, throughput, etc.)")
+    target_value: str = Field(description="Target performance value for this component under expected load.")
+
+class TestTraceability(BaseModel):
+    requirement: str = Field(description="Requirement or business goal being tested.")
+    test_case_ids: List[str] = Field(description="IDs of test cases validating this requirement.")
+    coverage_status: str = Field(description="Coverage status (e.g., full, partial, missing).")
 
 class InternalComponentDesign(BaseModel):
     component_name: str
@@ -177,6 +223,9 @@ class InternalComponentDesign(BaseModel):
     error_handling_local: str
     versioning: str
     security_considerations: str
+    method_details: List[MethodDetail] = Field(default_factory=list, description="Detailed methods inside the component.")
+    failure_handling_flows: List[FailureHandlingFlow] = Field(default_factory=list, description="Failure handling flows for this component.")
+    load_benchmark_targets: List[LoadBenchmarkTarget] = Field(default_factory=list, description="Performance/load targets for this component.")
 
 class APIEndpointDetail(BaseModel):
     endpoint: str
@@ -198,6 +247,7 @@ class DataModelDetail(BaseModel):
     validation_rules: List[str]
     foreign_keys: List[str]
     migration_strategy: str
+    access_patterns: List[DataAccessPattern] = Field(default_factory=list, description="Typical access patterns for this data.")
 
 class BusinessLogic(BaseModel):
     core_algorithms: str
@@ -256,6 +306,7 @@ class LowLevelDesign(BaseModel):
     testing_strategy: TestingStrategy
     operational_readiness: OperationalReadiness
     documentation_governance: DocumentationGovernance
+    test_traceability: List[TestTraceability] = Field(default_factory=list, description="Mapping of requirements to test cases and coverage.")
     citations: List[Citation]
 
 # ==========================================
@@ -302,3 +353,4 @@ class ProjectStructure(BaseModel):
         if not v:
             raise ValueError("Must generate at least one starter file (e.g., README).")
         return v
+# ==========================================

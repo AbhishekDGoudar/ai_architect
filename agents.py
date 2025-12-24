@@ -1,7 +1,7 @@
 from langchain_core.language_models import BaseChatModel
 from typing import List, Optional
+from datetime import date
 
-# Import the strictly required unified schemas
 from schemas import (
     HighLevelDesign, LowLevelDesign, JudgeVerdict, 
     SecurityCompliance, ArchitectureDiagrams, 
@@ -9,38 +9,39 @@ from schemas import (
     ProjectStructure
 )
 from callbacks import TokenMeter
-# Import the knowledge engine
 from rag import knowledge as kb 
 
 # ==========================================
-# 🤖 AGENTS
+# AGENTS
 # ==========================================
 
 def engineering_manager(user_request: str, llm: BaseChatModel, meter: TokenMeter, feedback: str = ""):
-    """Generates the initial High-Level Design (HLD)."""
+    """Generates a fully populated High-Level Design (HLD). Diagrams remain null."""
     try:
         context = kb.search(user_request, use_web=True, use_kb=True)
     except Exception:
         context = "No knowledge base context available."
     
+    today = date.today().isoformat()
     system_msg = f"""
-    You are a Principal Software Architect. 
-    Design a robust High Level Design (HLD) covering the 11-point framework.
+You are a Principal Software Architect. 
+Generate a fully populated High-Level Design (HLD) covering all fields.
+CRITICAL: Leave 'diagrams' as null.
 
-    COMPLIANCE RULES:
-    1. EVERY field in the schema is REQUIRED *EXCEPT* 'diagrams'.
-    2. Do NOT provide null or empty strings. If a field doesn't apply, use "N/A".
-    3. For 'tech_stack', provide a LIST of objects with 'layer' and 'technology'.
-    4. For 'storage_choices', provide a LIST of objects with 'component' and 'technology'.
-    5. 'citations' are MANDATORY. Use your internal knowledge for citations if web data is low.
-    6. CRITICAL: Leave 'diagrams' as null. Do NOT generate URLs or placeholders. A separate specialist handles this.
+RULES:
+1. Every field in the schema is REQUIRED except 'diagrams'.
+2. Do NOT provide null or empty strings. Use "N/A" for text, [] for lists if empty.
+3. Tech stack should include at least two layers.
+4. Storage choices must be fully populated.
+5. Citations are mandatory.
+IMPORTANT: Consider the current date {today} and provide recommendations using the most relevant modern technologies available today.
 
-    RELEVANT CONTEXT:
-    {context}
-    """
+CONTEXT:
+{context}
+"""
     
     if feedback:
-        system_msg += f"\n\n⚠️ CRITICAL FEEDBACK FROM PREVIOUS RUN: {feedback}\nYou MUST address these issues in this iteration."
+        system_msg += f"\n\n⚠️ PREVIOUS FEEDBACK: {feedback}\nEnsure these issues are resolved."
 
     structured_llm = llm.with_structured_output(HighLevelDesign)
     
@@ -49,19 +50,21 @@ def engineering_manager(user_request: str, llm: BaseChatModel, meter: TokenMeter
         config={"callbacks": [meter]}
     )
 
+
 def security_specialist(hld: HighLevelDesign, llm: BaseChatModel, meter: TokenMeter):
-    """Refines the Security Compliance section of the HLD."""
+    """Refines the Security Compliance section."""
     hld_context = hld.model_dump_json(indent=2)
+    today = date.today().isoformat()
     system_msg = f"""
-    You are a Security Specialist. Review and harden the 'security_compliance' section.
-    Enforce GDPR, SOC2, and Zero Trust principles.
-    
-    REQUIREMENT: You must return a fully populated SecurityCompliance object. 
-    No optional fields are allowed.
-    
-    CURRENT HLD FOR REVIEW:
-    {hld_context}
-    """
+You are a Security Specialist.
+Review and harden the 'security_compliance' section.
+Enforce GDPR, SOC2, and Zero Trust principles.
+RETURN a fully populated SecurityCompliance object.
+IMPORTANT: Consider the current date {today} and provide security best practices relevant today.
+
+CURRENT HLD:
+{hld_context}
+"""
     
     structured_llm = llm.with_structured_output(SecurityCompliance)
     return structured_llm.invoke(
@@ -69,147 +72,174 @@ def security_specialist(hld: HighLevelDesign, llm: BaseChatModel, meter: TokenMe
         config={"callbacks": [meter]}
     )
 
+
 def team_lead(hld: HighLevelDesign, llm: BaseChatModel, meter: TokenMeter):
-    """Generates the Low-Level Design (LLD)."""
+    """Generates a fully populated Low-Level Design (LLD)."""
     hld_context = hld.model_dump_json(indent=2)
+    today = date.today().isoformat()
     system_msg = f"""
-    You are a Senior Team Lead. Generate the Low Level Design (LLD) based on the HLD.
+You are a Senior Team Lead.
+Generate the Low-Level Design (LLD) based on the HLD.
+
+RULES:
+1. Fill EVERY field. Use "N/A" for text or [] for lists if empty.
+2. Focus on API Contracts, Data Models, and Component Internals.
+3. Include citations for technical choices.
+IMPORTANT: Consider the current date {today} and provide modern tech stack recommendations.
+
+HLD CONTEXT:
+{hld_context}
+"""
     
-    COMPLIANCE RULES:
-    1. Fill EVERY field. Use "N/A" for text or [] for lists if no data exists.
-    2. Focus on API Contracts, Data Models, and Component Internals.
-    3. Ensure 'citations' are included for technical choices.
-    
-    HLD ARCHITECTURE TO IMPLEMENT: 
-    {hld_context}
-    """
     structured_llm = llm.with_structured_output(LowLevelDesign)
-    
     return structured_llm.invoke(
         [("system", system_msg), ("human", "Generate detailed LLD.")],
         config={"callbacks": [meter]}
     )
 
+
 def visual_architect(hld: HighLevelDesign, llm: BaseChatModel, meter: TokenMeter):
-    """Generates Python code for Architecture Diagrams."""
+    """Generates diagram Python code using the 'diagrams' library."""
     hld_summary = hld.model_dump_json(include={'core_components', 'architecture_overview', 'data_architecture'})
-    
+    today = date.today().isoformat()
     system_msg = f"""
-    You are a Visualization Expert.
-    Generate VALID PYTHON CODE using the 'diagrams' library for 3 distinct diagrams.
+You are a Visualization Expert.
+Generate Python code using the 'diagrams' library for 3 diagrams: System Context, Container, Data Flow.
 
-    DIAGRAMS REQUIRED:
-    1. System Context: Show users and external systems.
-    2. Container Diagram: Show services, databases, and queues.
-    3. Data Flow: Show sensitive data paths and trust boundaries.
+RULES:
+- Include all HLD core components in diagrams.
+- Use show=False in Diagram constructor.
+- Return a valid ArchitectureDiagrams object with system_context, container_diagram, data_flow fields.
+IMPORTANT: Consider the current date {today} and provide diagrams reflecting today’s architecture best practices.
 
-    CRITICAL CODING RULES:
-    - Use standard imports (e.g., `from diagrams.aws.compute import EC2`).
-    - ALWAYS include `show=False` in the Diagram constructor to prevent opening files.
-      Example: `with Diagram("Name", show=False):`
-    - Do NOT call `os.system` or file operations other than Diagram logic.
-    - Return a valid 'ArchitectureDiagrams' object with all 3 code strings.
+CONTEXT:
+{hld_summary}
+"""
     
-    CONTEXT:
-    {hld_summary}
-    """
     structured_llm = llm.with_structured_output(ArchitectureDiagrams)
     return structured_llm.invoke(
         [("system", system_msg), ("human", "Generate diagram code.")],
         config={"callbacks": [meter]}
     )
 
-def architecture_judge(hld: HighLevelDesign, lld: LowLevelDesign, llm: BaseChatModel, meter: TokenMeter):
-    """Evaluates consistency between HLD and LLD."""
-    system_msg = """
-    You are a QA Architect. Evaluate the HLD and LLD for consistency and gaps.
-    
-    STRICT REQUIREMENT: 
-    Every list in the schema (e.g., security_gaps, diagram_issues) must be present. 
-    If no issues are found for a category, return an empty list [].
-    
-    CRITIQUE FOCUS:
-    - Are LLD components tracking HLD core components?
-    - Is the technology stack consistent?
-    """
-    structured_llm = llm.with_structured_output(JudgeVerdict)
-    
-    user_content = f"HLD:\n{hld.model_dump_json()}\n\nLLD:\n{lld.model_dump_json()}"
-    return structured_llm.invoke(
-        [("system", system_msg), ("human", user_content)],
-        config={"callbacks": [meter]}
-    )
-
-def reiteration_agent(judge: JudgeVerdict, hld: HighLevelDesign, lld: LowLevelDesign, llm: BaseChatModel, meter: TokenMeter):
-    """Refines the design based on the Judge's critique."""
-    system_msg = f"""
-    You are a Principal Software Architect.
-    Review the Judge's critique and IMPROVE both the HLD and LLD.
-    
-    You must output a 'RefinedDesign' object containing the full updated HLD and LLD.
-    Do not return partial updates; return the complete objects.
-    
-    IMPORTANT: Keep 'diagrams' as null in the HLD. Do not attempt to generate diagrams here.
-    
-    CRITIQUE: {judge.critique}
-    MISMATCHES: {judge.hld_lld_mismatch}
-    SECURITY GAPS: {judge.security_gaps}
-    """
-    structured_llm = llm.with_structured_output(RefinedDesign)
-    
-    return structured_llm.invoke(
-        [("system", system_msg), ("human", "Refine the complete design iteratively.")],
-        config={"callbacks": [meter]}
-    )
 
 def diagram_validator(hld: HighLevelDesign, llm: BaseChatModel, meter: TokenMeter):
     """Validates the generated diagram code."""
     if not hld.diagrams:
-        diagram_content = "No diagrams were generated."
+        diagram_content = "No diagrams generated."
     else:
-        diagram_content = f"""
-        System Context Code: {hld.diagrams.system_context}
-        Container Code: {hld.diagrams.container_diagram}
-        """
+        diagram_content = "\n".join(
+            f"System Context: {d.system_context}\nContainer: {d.container_diagram}\nData Flow: {d.data_flow}"
+            for d in hld.diagrams
+        )
     
     hld_components = [c.name for c in hld.core_components]
-    
+    today = date.today().isoformat()
     system_msg = f"""
-    You are a Diagram QA Expert. 
-    1. Check for Python syntax errors in the 'diagrams' library code.
-    2. Ensure these HLD components are present in the diagrams: {hld_components}.
-    """
+You are a Diagram QA Expert. 
+1. Check Python syntax for 'diagrams' library code.
+2. Ensure all HLD core components are represented: {hld_components}.
+IMPORTANT: Consider the current date {today} when validating diagrams.
+"""
     
     structured_llm = llm.with_structured_output(DiagramValidationResult)
-    
     return structured_llm.invoke(
         [("system", system_msg), ("human", diagram_content)],
         config={"callbacks": [meter]}
     )
 
+
 def scaffold_architect(lld: LowLevelDesign, llm: BaseChatModel, meter: TokenMeter):
-    """Generates the file structure and starter code on-demand."""
-    
-    # Extract context to keep tokens low
+    """Generates project structure & starter files on-demand."""
     tech_stack_context = [c.component_name for c in lld.detailed_components]
     api_context = [a.endpoint for a in lld.api_design]
+    today = date.today().isoformat()
     
     system_msg = f"""
-    You are a DevOps Architect.
-    Generate a practical starter project structure based on the Low Level Design.
-    
-    RULES:
-    1. Generate a 'requirements.txt' or 'package.json' matching the tech stack.
-    2. Create a 'README.md' explaining how to run the project.
-    3. Generate 'docker-compose.yml' if databases are required.
-    4. Generate skeleton code for the Main Entrypoint (e.g., main.py or index.js).
-    
-    COMPONENTS TO SCAFFOLD: {tech_stack_context}
-    API ENDPOINTS: {api_context}
-    """
+You are a DevOps Architect.
+Generate a practical starter project structure based on the LLD.
+
+RULES:
+1. Include requirements.txt / package.json matching the tech stack.
+2. README.md explaining how to run the project.
+3. docker-compose.yml if databases are required.
+4. Skeleton code for Main Entrypoint.
+IMPORTANT: Consider the current date {today} and provide modern setup recommendations.
+
+COMPONENTS: {tech_stack_context}
+API ENDPOINTS: {api_context}
+"""
     
     structured_llm = llm.with_structured_output(ProjectStructure)
     return structured_llm.invoke(
         [("system", system_msg), ("human", "Generate project scaffolding.")],
         config={"callbacks": [meter]}
     )
+
+
+def architecture_judge(hld: HighLevelDesign, lld: LowLevelDesign, llm: BaseChatModel, meter: TokenMeter):
+    """Evaluates consistency between HLD and LLD."""
+    today = date.today().isoformat()
+    system_msg = f"""
+You are a QA Architect. Evaluate HLD & LLD for consistency.
+All list fields must be returned; return [] if empty.
+
+CRITIQUE FOCUS:
+- LLD components match HLD core components
+- Technology stack consistency
+IMPORTANT: Consider the current date {today} when evaluating.
+
+"""
+    
+    structured_llm = llm.with_structured_output(JudgeVerdict)
+    user_content = f"HLD:\n{hld.model_dump_json()}\n\nLLD:\n{lld.model_dump_json()}"
+    
+    return structured_llm.invoke(
+        [("system", system_msg), ("human", user_content)],
+        config={"callbacks": [meter]}
+    )
+
+
+def reiteration_agent(judge: JudgeVerdict, hld: HighLevelDesign, lld: LowLevelDesign, llm: BaseChatModel, meter: TokenMeter):
+    """Refines both HLD and LLD based on Judge's critique."""
+    today = date.today().isoformat()
+    system_msg = f"""
+You are a Principal Software Architect.
+IMPROVE the full HLD and LLD based on critique.
+Keep 'diagrams' as null in HLD.
+
+CRITIQUE: {judge.critique}
+HLD-LLD MISMATCHES: {judge.hld_lld_mismatch}
+SECURITY GAPS: {judge.security_gaps}
+IMPORTANT: Consider the current date {today} when updating designs.
+"""
+    
+    structured_llm = llm.with_structured_output(RefinedDesign)
+    return structured_llm.invoke(
+        [("system", system_msg), ("human", "Refine the complete design iteratively.")],
+        config={"callbacks": [meter]}
+    )
+
+
+def diagram_fixer(code: str, error_msg: str, llm: BaseChatModel, meter: TokenMeter):
+    """Fixes broken diagram code and returns valid ArchitectureDiagrams."""
+    today = date.today().isoformat()
+    system_msg = f"""
+You are a Python Expert specializing in 'diagrams' library.
+Fix the following code:
+
+ERROR: {error_msg}
+BROKEN CODE: {code}
+
+RULES:
+- Return ONLY valid, corrected Python code.
+- Ensure system_context, container_diagram, and data_flow fields are filled.
+IMPORTANT: Consider the current date {today} when fixing the code.
+"""
+    
+    structured_llm = llm.with_structured_output(ArchitectureDiagrams)
+    return structured_llm.invoke(
+        [("system", system_msg), ("human", "Fix this code.")],
+        config={"callbacks": [meter]}
+    )
+# ==========================================
