@@ -5,7 +5,8 @@ from typing import List, Optional
 from schemas import (
     HighLevelDesign, LowLevelDesign, JudgeVerdict, 
     SecurityCompliance, ArchitectureDiagrams, 
-    RefinedDesign, DiagramValidationResult
+    RefinedDesign, DiagramValidationResult,
+    ProjectStructure
 )
 from callbacks import TokenMeter
 # Import the knowledge engine
@@ -27,11 +28,12 @@ def engineering_manager(user_request: str, llm: BaseChatModel, meter: TokenMeter
     Design a robust High Level Design (HLD) covering the 11-point framework.
 
     COMPLIANCE RULES:
-    1. EVERY field in the schema is REQUIRED. 
+    1. EVERY field in the schema is REQUIRED *EXCEPT* 'diagrams'.
     2. Do NOT provide null or empty strings. If a field doesn't apply, use "N/A".
     3. For 'tech_stack', provide a LIST of objects with 'layer' and 'technology'.
     4. For 'storage_choices', provide a LIST of objects with 'component' and 'technology'.
-    5. 'diagrams' and 'citations' are MANDATORY. Use your internal knowledge for citations if web data is low.
+    5. 'citations' are MANDATORY. Use your internal knowledge for citations if web data is low.
+    6. CRITICAL: Leave 'diagrams' as null. Do NOT generate URLs or placeholders. A separate specialist handles this.
 
     RELEVANT CONTEXT:
     {context}
@@ -101,9 +103,11 @@ def visual_architect(hld: HighLevelDesign, llm: BaseChatModel, meter: TokenMeter
     2. Container Diagram: Show services, databases, and queues.
     3. Data Flow: Show sensitive data paths and trust boundaries.
 
-    RULES:
+    CRITICAL CODING RULES:
     - Use standard imports (e.g., `from diagrams.aws.compute import EC2`).
-    - Use common classes like APIGateway, PostgreSQL, Redis, React, etc.
+    - ALWAYS include `show=False` in the Diagram constructor to prevent opening files.
+      Example: `with Diagram("Name", show=False):`
+    - Do NOT call `os.system` or file operations other than Diagram logic.
     - Return a valid 'ArchitectureDiagrams' object with all 3 code strings.
     
     CONTEXT:
@@ -123,6 +127,10 @@ def architecture_judge(hld: HighLevelDesign, lld: LowLevelDesign, llm: BaseChatM
     STRICT REQUIREMENT: 
     Every list in the schema (e.g., security_gaps, diagram_issues) must be present. 
     If no issues are found for a category, return an empty list [].
+    
+    CRITIQUE FOCUS:
+    - Are LLD components tracking HLD core components?
+    - Is the technology stack consistent?
     """
     structured_llm = llm.with_structured_output(JudgeVerdict)
     
@@ -138,8 +146,14 @@ def reiteration_agent(judge: JudgeVerdict, hld: HighLevelDesign, lld: LowLevelDe
     You are a Principal Software Architect.
     Review the Judge's critique and IMPROVE both the HLD and LLD.
     
+    You must output a 'RefinedDesign' object containing the full updated HLD and LLD.
+    Do not return partial updates; return the complete objects.
+    
+    IMPORTANT: Keep 'diagrams' as null in the HLD. Do not attempt to generate diagrams here.
+    
     CRITIQUE: {judge.critique}
-    SPECIFIC ISSUES: {judge.hld_lld_mismatch}, {judge.security_gaps}
+    MISMATCHES: {judge.hld_lld_mismatch}
+    SECURITY GAPS: {judge.security_gaps}
     """
     structured_llm = llm.with_structured_output(RefinedDesign)
     
@@ -170,5 +184,32 @@ def diagram_validator(hld: HighLevelDesign, llm: BaseChatModel, meter: TokenMete
     
     return structured_llm.invoke(
         [("system", system_msg), ("human", diagram_content)],
+        config={"callbacks": [meter]}
+    )
+
+def scaffold_architect(lld: LowLevelDesign, llm: BaseChatModel, meter: TokenMeter):
+    """Generates the file structure and starter code on-demand."""
+    
+    # Extract context to keep tokens low
+    tech_stack_context = [c.component_name for c in lld.detailed_components]
+    api_context = [a.endpoint for a in lld.api_design]
+    
+    system_msg = f"""
+    You are a DevOps Architect.
+    Generate a practical starter project structure based on the Low Level Design.
+    
+    RULES:
+    1. Generate a 'requirements.txt' or 'package.json' matching the tech stack.
+    2. Create a 'README.md' explaining how to run the project.
+    3. Generate 'docker-compose.yml' if databases are required.
+    4. Generate skeleton code for the Main Entrypoint (e.g., main.py or index.js).
+    
+    COMPONENTS TO SCAFFOLD: {tech_stack_context}
+    API ENDPOINTS: {api_context}
+    """
+    
+    structured_llm = llm.with_structured_output(ProjectStructure)
+    return structured_llm.invoke(
+        [("system", system_msg), ("human", "Generate project scaffolding.")],
         config={"callbacks": [meter]}
     )

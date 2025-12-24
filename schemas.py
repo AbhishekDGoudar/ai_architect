@@ -1,5 +1,5 @@
-from pydantic import BaseModel, Field
-from typing import List, Literal
+from pydantic import BaseModel, Field, field_validator
+from typing import List, Optional
 
 # ==========================================
 # 📚 SHARED MODELS
@@ -36,19 +36,38 @@ class BusinessContext(BaseModel):
     non_goals: List[str]
     stakeholders: List[str]
 
+    @field_validator('business_goals', 'stakeholders')
+    def list_must_not_be_empty(cls, v):
+        if not v:
+            raise ValueError('This list cannot be empty. Provide at least one item.')
+        return v
+
 class ArchitectureDiagrams(BaseModel):
     system_context: str = Field(description="Python code for System Context Diagram.")
     container_diagram: str = Field(description="Python code for Container Diagram.")
     data_flow: str = Field(description="Python code for Data Flow Diagram.")
 
+    @field_validator('system_context', 'container_diagram')
+    def code_must_be_valid(cls, v):
+        if "Diagram" not in v:
+            raise ValueError("Code must use the 'diagrams' library.")
+        return v
+
 class ArchitectureOverview(BaseModel):
-    style: Literal["Microservices", "Event-Driven", "Monolith", "Hybrid", "Serverless"]
+    # 'style' converted to str to reduce schema complexity for Gemini
+    style: str = Field(description="Architecture style (e.g., 'Microservices', 'Event-Driven', 'Monolith').")
     system_context_diagram_desc: str
     high_level_component_diagram_desc: str
     data_flow_desc: str
     external_interfaces: List[str]
     user_stories: List[str]
     tech_stack: List[TechStackItem]
+
+    @field_validator('tech_stack')
+    def tech_stack_check(cls, v):
+        if len(v) < 2:
+            raise ValueError("Tech stack is too thin. Define at least 2 layers.")
+        return v
 
 class ComponentSpec(BaseModel):
     name: str
@@ -64,8 +83,9 @@ class ComponentSpec(BaseModel):
 class DataArchitecture(BaseModel):
     data_ownership_map: List[DataOwnerItem]
     storage_choices: List[StorageChoiceItem]
-    data_classification: Literal["Public", "Internal", "Confidential", "Restricted"]
-    consistency_model: Literal["Strong", "Eventual", "Causal"]
+    # Enums converted to descriptive strings to prevent "Too Many States" error
+    data_classification: str = Field(description="e.g., 'Public', 'Internal', 'Confidential', 'Restricted'")
+    consistency_model: str = Field(description="e.g., 'Strong', 'Eventual', 'Causal'")
     data_retention_policy: str
     data_backup_recovery: str
     schema_evolution_strategy: str
@@ -75,7 +95,7 @@ class IntegrationStrategy(BaseModel):
     internal_apis: List[str]
     api_gateway_strategy: str
     api_documentation: str
-    contract_strategy: Literal["OpenAPI", "Protobuf", "GraphQL", "Thrift"]
+    contract_strategy: str = Field(description="e.g., 'OpenAPI', 'Protobuf', 'GraphQL'")
     versioning_strategy: str
     backward_compatibility_plan: str
 
@@ -114,9 +134,9 @@ class ObservabilityStrategy(BaseModel):
 
 class DeploymentOperations(BaseModel):
     cloud_provider: str
-    deployment_model: Literal["Serverless", "Containers", "VMs", "On-Prem"]
+    deployment_model: str = Field(description="e.g., 'Serverless', 'Containers', 'VMs', 'On-Prem'")
     cicd_pipeline: str
-    deployment_strategy: Literal["Blue-Green", "Canary", "Rolling", "Recreate"]
+    deployment_strategy: str = Field(description="e.g., 'Blue-Green', 'Canary', 'Rolling'")
     feature_flag_strategy: str
     rollback_strategy: str
     operational_monitoring: str
@@ -140,7 +160,8 @@ class HighLevelDesign(BaseModel):
     observability: ObservabilityStrategy
     deployment_ops: DeploymentOperations
     design_decisions: DesignDecisions
-    diagrams: ArchitectureDiagrams
+    # Optional to prevent validation crash if Manager returns None
+    diagrams: Optional[ArchitectureDiagrams] = None
     citations: List[Citation]
 
 # ==========================================
@@ -262,3 +283,22 @@ class DiagramValidationResult(BaseModel):
     missing_elements: List[str]
     invalid_elements: List[str]
     critique: str
+
+# ==========================================
+# 🏗️ SECTION 4: SCAFFOLDING & CODE GEN
+# ==========================================
+
+class FileSpec(BaseModel):
+    filename: str = Field(description="Relative path, e.g., 'src/main.py'")
+    content: str = Field(description="The actual code content.")
+
+class ProjectStructure(BaseModel):
+    project_name: str
+    cookiecutter_url: Optional[str] = Field(description="URL to a cookiecutter template if applicable, else null.")
+    starter_files: List[FileSpec] = Field(description="List of essential starter files (README, requirements.txt, main entrypoint).")
+    
+    @field_validator('starter_files')
+    def has_files(cls, v):
+        if not v:
+            raise ValueError("Must generate at least one starter file (e.g., README).")
+        return v
