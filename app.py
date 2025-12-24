@@ -1,28 +1,79 @@
 import streamlit as st
-import streamlit.components.v1 as components
 import pandas as pd
 import shutil
 import os
 import time
+from datetime import datetime
 import agents
 from graph import app_graph
 from schemas import HighLevelDesign, LowLevelDesign
-from storage import save_snapshot, list_snapshots, load_snapshot
+from storage import save_snapshot, list_snapshots, load_snapshot, delete_snapshot
 from tools import generate_scaffold
 from model_factory import get_llm
 from callbacks import TokenMeter
 from rag import knowledge  # Knowledge base engine
+import streamlit.components.v1 as components
 
 st.set_page_config(page_title="AI Architect Studio", page_icon="🏗️", layout="wide")
 
 # ==========================================
-# 🎨 UI COMPONENT RENDERERS
+# 🧠 SESSION STATE INITIALIZATION
 # ==========================================
+if "project_state" not in st.session_state:
+    st.session_state["project_state"] = {
+        "hld": None,
+        "lld": None,
+        "scaffold": None,
+        "diagram_code": None,
+        "diagram_path": None,
+        "logs": [],
+        "total_tokens": 0,
+        "provider": "gemini", # Default
+        "user_request": "",
+        "project_name": "MyGenAIApp"
+    }
+
+if "running_task" not in st.session_state:
+    st.session_state["running_task"] = None  # Tracks which task is currently running
+
+# ==========================================
+# 🛠️ HELPER FUNCTIONS
+# ==========================================
+
+def calculate_cost(tokens, provider):
+    # Rough estimates per 1M tokens (blended input/output)
+    rates = {
+        "openai": 0.50,   # GPT-4o-mini approx
+        "gemini": 0.20,   # Flash approx
+        "claude": 1.00,   # Haiku approx
+        "ollama": 0.00
+    }
+    rate = rates.get(provider, 0.0)
+    cost = (tokens / 1_000_000) * rate
+    return f"${cost:.4f}"
 
 def render_list(items, label):
     st.markdown(f"**{label}:**")
     if not items: st.caption("None")
     else: st.markdown("\n".join([f"- {i}" for i in items]))
+
+
+
+def render_mermaid(code: str, height=500):
+    """
+    Renders Mermaid.js diagram using a lightweight HTML component.
+    """
+    html_code = f"""
+    <div class="mermaid" style="height: {height}px; overflow: auto;">
+    {code}
+    </div>
+    <script type="module">
+      import mermaid from '[https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.esm.min.mjs](https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.esm.min.mjs)';
+      mermaid.initialize({{ startOnLoad: true }});
+    </script>
+    """
+    components.html(html_code, height=height)
+
 
 def display_hld(hld: HighLevelDesign, container):
     """Renders the FULL HLD content into a specific container."""
@@ -295,271 +346,221 @@ def display_lld(lld: LowLevelDesign, container):
                 st.markdown(f"**Description:** {citation.description}")
                 st.write(f"**Source:** {citation.source}")
 
-# ==========================================
-# 📊 PROGRESS & VISUAL HELPERS
-# ==========================================
-
 def get_progress_config(task: str):
-    """
-    Returns the step configuration and progress weights for a specific task.
-    This ensures the progress bar scales 0-100% relative to the specific action.
-    """
+    """Progress bar configuration."""
     if task == "architecture":
-        return {
-            "steps": ["manager", "security", "team_lead", "judge", "visuals", "scaffold"],
-            "weights": {
-                "start": 0,
-                "manager": 10, "security": 25, "team_lead": 40, 
-                "judge": 55, "refiner": 50, # Loop area
-                "visuals": 70, "fix_diagram": 75, "validator": 80, 
-                "scaffold": 90, "end": 100
-            }
-        }
+        return {"weights": {"manager": 10, "security": 30, "team_lead": 60, "judge": 80, "refiner": 70, "end": 100}}
     elif task == "diagrams":
-        return {
-            "steps": ["visuals", "fix_diagram", "validator"],
-            "weights": {
-                "visuals": 25, "fix_diagram": 50, "validator": 80, "end": 100
-            }
-        }
+        return {"weights": {"visuals": 30, "fix_diagram": 60, "validator": 90, "end": 100}}
     elif task == "code":
-        return {
-            "steps": ["scaffold"],
-            "weights": {
-                "scaffold": 50, "end": 100
-            }
-        }
-    return {"steps": [], "weights": {}}
-
-def get_progress_value(node: str, task: str) -> int:
-    """
-    Retrieves the numeric progress (0-100) for a given graph node.
-    """
-    config = get_progress_config(task)
-    weights = config.get("weights", {})
-    return min(weights.get(node, 0), 100)
-
-def get_progress_visual(current_node: str, task: str):
-    """Renders a text-based breadcrumb trail specific to the active task."""
-    config = get_progress_config(task)
-    steps = config.get("steps", [])
-    
-    # Mapping readable names
-    labels = {
-        "start": "Start", "manager": "Manager", "security": "Security", 
-        "team_lead": "Team Lead", "judge": "Judge", "visuals": "Visuals", 
-        "fix_diagram": "Fixer", "validator": "Validator", 
-        "scaffold": "Scaffold", "refiner": "Refiner"
-    }
-    
-    visual_parts = []
-    found_active = False
-    
-    for step in steps:
-        label = labels.get(step, step.capitalize())
-        if step == current_node:
-            visual_parts.append(f"**🔹 {label}**") # Active
-            found_active = True
-        else:
-            visual_parts.append(f"{label}")
-    
-    # If the current node isn't in the standard path (e.g. error loops), append it
-    if not found_active and current_node != "start":
-        label = labels.get(current_node, current_node.capitalize())
-        visual_parts.append(f"**🔄 {label}**")
-        
-    return " → ".join(visual_parts)
+        return {"weights": {"scaffold": 80, "end": 100}}
+    return {"weights": {}}
 
 # ==========================================
-# ⚙️ SETTINGS & SIDEBAR
+# ⚙️ SIDEBAR
 # ==========================================
 with st.sidebar:
-    st.title("⚙️ Settings")
-    provider = st.selectbox("LLM", ["openai", "gemini", "claude", "ollama"], index=1)
+    st.title("⚙️ Studio Settings")
+    
+    # LLM Config
+    provider = st.selectbox("LLM Provider", ["openai", "gemini", "claude", "ollama"], index=1)
+    st.session_state["project_state"]["provider"] = provider
+    
     api_key = st.text_input("API Key", type="password", value=st.session_state.get("api_key", ""))
-    st.caption("Disclaimer: Your API key is used only for this session and is never stored.")
     st.session_state["api_key"] = api_key
-    st.divider()
     
-    # Knowledge Base Ingestion
-    st.subheader("Knowledge Base")
-    uploaded_file = st.file_uploader("Upload Company standards or existing architecture details in PDF or TXT", type=["pdf", "txt"])
-    if uploaded_file:
-        result = knowledge.ingest_upload(uploaded_file)
-        st.success(result)
-    if st.button("Ingest KB Directory"):
-        result = knowledge.ingest_directory()
-        st.success(result)
-    
-    st.divider()
-    
-    # Snapshot Loading
-    snapshot_list = list_snapshots()
-    snapshot_count = len(snapshot_list)
-    selected_file = st.selectbox(f"Load Snapshots (Total Available: {snapshot_count})", ["(New)"] + snapshot_list)
 
-    st.caption("Save a snapshot of the architecture you create, or upload existing architectural diagrams for reference.")
+    # Knowledge Base
+    st.divider()
+    st.subheader("📚 Knowledge Base")
+    uploaded_kb = st.file_uploader("Upload Company Standards", type=["pdf", "txt"])
+    if uploaded_kb:
+        res = knowledge.ingest_upload(uploaded_kb)
+        st.toast(res)
+    
+    # Snapshots
+    st.divider()
+    snapshots = list_snapshots()
+    snapshot_count = len(snapshots)
+    st.subheader("📂 Snapshots")
+    selected_snap = st.selectbox(f"Select from {snapshot_count} available snapshots",  snapshots)
+    
+    col_load, col_del = st.columns([1, 1])
+    
+    with col_load:
+        if selected_snap != None and st.button("Load"):
+            try:
+                data = load_snapshot(selected_snap)
+                # Merge loaded data into session state
+                st.session_state["project_state"].update(data)
+                st.rerun()
+            except Exception as e:
+                st.error(f"Load failed: {e}")
+    with col_del:
+         if selected_snap != None and st.button("Delete"):
+            if delete_snapshot(selected_snap):
+                st.toast(f"Deleted {selected_snap}")
+                time.sleep(1)
+                st.rerun()
 
-    if selected_file != "(New)" and st.button("Load"):
-        try:
-            d = load_snapshot(selected_file)
-            if "provider" not in d:
-                d["provider"] = d.get("metrics", {}).get("provider", provider)
-            
-            st.session_state["current_result"] = d
-            st.session_state["project_name"] = selected_file.replace(".json", "")
-            st.success(f"Loaded {selected_file}")
-            time.sleep(0.5)
-            st.rerun()
-        except Exception as e:
-            st.error(f"Error loading snapshot: {e}")
+
 
 # ==========================================
-# 🚀 MAIN APP LOGIC
+# 🚀 MAIN APP LAYOUT
 # ==========================================
-st.title("🤖 AI Architect Studio")
 
-# 1. NEW GENERATION FLOW
-if st.session_state.get("current_result") is None:
-    p_name = st.text_input("Project Name", value="MyGenAIApp")
-    user_prompt = st.text_area("Requirements", height=150, placeholder="Describe your system requirements here...")
+# 1. Header & Estimation
+col_title, col_metrics, buttons = st.columns([3, 1, 0.5])
+with col_title:
+    st.title("🤖 AI Architect Studio")
+with col_metrics:
+    tokens = st.session_state["project_state"]["total_tokens"]
+    cost_str = calculate_cost(tokens, provider)
+    st.metric(label="Estimated Cost", value=cost_str, delta=f"{tokens} Tokens")
 
-    if st.button("Generate Architecture", type="primary"):
+
+with buttons:
+    if st.button("💾 Save Progress", use_container_width=True):
+        if st.session_state["project_state"].get("hld"):
+            fname = save_snapshot(st.session_state["project_state"]["project_name"], st.session_state["project_state"])
+            if fname: st.toast(f"Saved: {fname}", icon="✅")
+        else:
+            st.toast("Nothing to save yet.", icon="⚠️")
+    if st.button("🗑️ Clear Progress", use_container_width=True):
+        st.session_state["project_state"] = {
+            "hld": None, "lld": None, "scaffold": None, 
+            "diagram_code": None, "diagram_path": None, 
+            "logs": [], "total_tokens": 0, "provider": provider, 
+            "user_request": "", "project_name": "NewProject"
+        }
+        st.rerun()
+
+
+# 2. Input Area
+with st.container():
+    p_name = st.text_input("Project Name", placeholder="Provider Project Name Identifier...", value=st.session_state["project_state"]["project_name"])
+    st.session_state["project_state"]["project_name"] = p_name
+    
+    req_text = st.text_area("Requirements", height=100, placeholder="Describe your system...", value=st.session_state["project_state"]["user_request"])
+    st.session_state["project_state"]["user_request"] = req_text
+    
+    if st.button("🚀 Generate Architecture", type="primary"):
         if not api_key and provider != "ollama":
-            st.error("Please enter an API Key.")
-            st.stop()
-        
-        # --- Prepare Live UI ---
-        progress_bar = st.progress(0)
-        status_text = st.empty()
-        
-        # Create tabs *immediately* so we can populate them as data arrives
-        tab_hld, tab_lld = st.tabs(["🏛️ HLD Live", "💻 LLD Live"])
-        hld_container = tab_hld.container()
-        lld_container = tab_lld.container()
-        
-        with st.status("🏗️ Architecting Solution...", expanded=False) as status:
-            state = {"user_request": user_prompt, "provider": provider, "api_key": api_key, "retry_count": 0, "total_tokens": 0}
-            
-            # Initial Status
-            status_text.markdown(get_progress_visual("start", task="architecture"))
-            
-            # --- Stream Graph Execution ---
-            for event in app_graph.stream(state):
-                for node, update in event.items():
-                    state.update(update)
-                    
-                    # Update Progress
-                    prog_val = get_progress_value(node, task="architecture")
-                    progress_bar.progress(prog_val)
-                    status_text.markdown(get_progress_visual(node, task="architecture"))
-                    
-                    # Log to status
-                    if "logs" in update:
-                        for log_entry in update['logs']:
-                            role = log_entry.get('role', node)
-                            msg = log_entry.get('message', '')
-                            status.write(f"**{role.capitalize()}**: {msg}")
-                    
-                    # LIVE RENDER: Update HLD if available
-                    if "hld" in update and update['hld']:
-                        hld_container.empty()
-                        display_hld(update['hld'], hld_container)
-
-                    # LIVE RENDER: Update LLD if available
-                    if "lld" in update and update['lld']:
-                        lld_container.empty()
-                        display_lld(update['lld'], lld_container)
-
-            # Progress complete
-            progress_bar.progress(100)
-            status_text.markdown("✅ **Architecture Generation Complete**")
-            
-            st.session_state["current_result"] = state
-            st.session_state["project_name"] = p_name
+            st.error("API Key required.")
+        else:
+            st.session_state["running_task"] = "architecture"
             st.rerun()
 
-# 2. RESULT VIEW (Static / Interactive)
-else:
-    res = st.session_state["current_result"]
-    hld = res.get('hld')
-    lld = res.get('lld')
-    scaffold = res.get('scaffold')
-    diagram_path = res.get('diagram_path')
+# 3. Dynamic Progress Bar (Only visible when running)
+if st.session_state["running_task"]:
+    progress_bar = st.progress(0)
+    status_text = st.empty()
     
-    # --- Toolbar ---
-    c1, c2, c3 = st.columns([1, 1, 4])
-    with c1:
-        if st.button("💾 Save Snapshot"):
-            fname = save_snapshot(st.session_state.get("project_name", "Untitled"), res)
-            if fname: st.success(f"Saved: {fname}")
-    with c2:
-        if st.button("🔄 New Session"):
-            st.session_state["current_result"] = None
-            st.rerun()
+    # Prepare Graph Input
+    initial_state = st.session_state["project_state"].copy()
+    initial_state["task"] = st.session_state["running_task"]
+    initial_state["api_key"] = api_key
+    initial_state["provider"] = provider
+    
+    # Stream Graph
+    try:
+        current_weights = get_progress_config(st.session_state["running_task"])["weights"]
+        
+        for event in app_graph.stream(initial_state):
+            for node, update in event.items():
+                # Update Session State with results
+                st.session_state["project_state"].update(update)
+                
+                # Update UI Progress
+                prog = min(current_weights.get(node, 0), 95)
+                progress_bar.progress(prog)
+                status_text.markdown(f"**Processing:** {node.replace('_', ' ').capitalize()}...")
+        
+        progress_bar.progress(100)
+        status_text.success(f"{st.session_state['running_task'].capitalize()} Complete!")
+        time.sleep(1) 
+    except Exception as e:
+        st.error(f"Workflow failed: {e}")
+    
+    # Cleanup and Refresh
+    st.session_state["running_task"] = None
+    st.rerun()
 
-    # --- Tabs ---
-    tab_hld, tab_lld, tab_code, tab_art = st.tabs(["🏛️ HLD Full", "💻 LLD Full", "🛠️ Code", "📂 Diagrams"])
+st.divider()
 
-    # Calls the same render functions as the live view
-    display_hld(hld, tab_hld)
-    display_lld(lld, tab_lld)
+# 4. Artifact Tabs
+t_hld, t_lld, t_code, t_diag = st.tabs(["🏛️ HLD", "💻 LLD", "🛠️ Code", "📂 Diagrams"])
 
-    # --- Code Tab ---
-    with tab_code:
-        st.header("Project Scaffolding")
-        if scaffold:
-            st.success(f"✅ Generated {len(scaffold.starter_files)} starter files.")
-            for f in scaffold.starter_files:
-                with st.expander(f"📄 {f.filename}"):
-                    st.code(f.content)
+# --- HLD Tab ---
+with t_hld:
+    if st.session_state["project_state"]["hld"]:
+        display_hld(st.session_state["project_state"]["hld"], st.container())
+    else:
+        st.info("No High-Level Design generated yet.")
+
+# --- LLD Tab ---
+with t_lld:
+    if st.session_state["project_state"]["lld"]:
+        display_lld(st.session_state["project_state"]["lld"], st.container())
+    else:
+        st.info("No Low-Level Design generated yet.")
+
+# --- Code Tab ---
+with t_code:
+    col_act, col_view = st.columns([1, 4])
+    with col_act:
+        if st.session_state["project_state"]["lld"]:
+            if st.button("⚡ Generate Code"):
+                st.session_state["running_task"] = "code"
+                st.rerun()
+        else:
+            st.button("⚡ Generate Code", disabled=True, help="Requires LLD first")
+
+    if st.session_state["project_state"]["scaffold"]:
+        st.success(f"Generated {len(st.session_state['project_state']['scaffold'].starter_files)} files.")
+        for f in st.session_state["project_state"]["scaffold"].starter_files:
+            with st.expander(f"📄 {f.filename}"):
+                st.code(f.content)
+        
+        # Download
+        output_dir = f"./output/{st.session_state['project_state']['project_name']}"
+        generate_scaffold(st.session_state["project_state"]["scaffold"], output_dir=output_dir)
+        shutil.make_archive(output_dir, 'zip', output_dir)
+        with open(f"{output_dir}.zip", "rb") as f:
+            st.download_button("⬇️ Download ZIP", f, file_name=f"{st.session_state['project_state']['project_name']}.zip")
+    else:
+        st.write("No code generated yet.")
+
+with t_diag:
+    col_act_d, col_view_d = st.columns([1, 4])
+    
+    # 1. Action Column (Buttons)
+    with col_act_d:
+        # Only allow generation if HLD exists (Prerequisite)
+        if st.session_state["project_state"]["hld"]:
+            # Change label based on whether diagrams already exist
+            has_diagrams = st.session_state["project_state"]["diagram_code"] is not None
+            btn_label_d = "🎨 Regenerate Diagrams" if has_diagrams else "🎨 Generate Diagrams"
             
-            if st.button("📦 Download ZIP"):
-                output_dir = f"./output/{st.session_state.get('project_name','app')}"
-                generate_scaffold(scaffold, output_dir=output_dir)
-                shutil.make_archive(output_dir, 'zip', output_dir)
-                with open(f"{output_dir}.zip", "rb") as f:
-                    st.download_button("⬇️ Download ZIP", f, file_name=f"{st.session_state.get('project_name','app')}.zip")
+            if st.button(btn_label_d, use_container_width=True):
+                st.session_state["running_task"] = "diagrams"
+                st.rerun()
         else:
-            if lld:
-                st.info("Low Level Design is ready. You can now generate the starter code.")
-                if st.button("🚀 Generate Scaffolding Now", type="primary"):
-                    with st.spinner("👷 DevOps Agent is working..."):
-                        llm = get_llm(res['provider'], res['api_key'], "fast")
-                        meter = TokenMeter()
-                        try:
-                            # Direct call to the agent function if available, or simulate via graph
-                            # Assuming scaffold_architect is available in agents.py
-                            new_scaffold = agents.scaffold_architect(lld, llm, meter)
-                            st.session_state["current_result"]["scaffold"] = new_scaffold
-                            st.session_state["current_result"]["total_tokens"] = \
-                                st.session_state["current_result"].get("total_tokens", 0) + meter.total_tokens
-                            st.rerun()
-                        except Exception as e:
-                            st.error(f"Scaffolding failed: {str(e)}")
-            else:
-                st.warning("You must generate the LLD (Phase 1) before you can scaffold code.")
+            # Show disabled button if HLD is missing
+            st.button("🎨 Generate Diagrams", disabled=True, use_container_width=True, help="Requires HLD first")
 
-    # --- Diagrams Tab ---
-    with tab_art:
-        st.header("Architecture Diagrams")
-        if diagram_path and os.path.exists(diagram_path):
-            st.image(diagram_path, caption="System Architecture")
-            st.caption(f"Source: {diagram_path}")
-        elif res.get('diagram_code'):
-            st.warning("Diagram code generated, but rendering failed.")
-            if hasattr(res['diagram_code'], 'system_context'):
-                 st.code(res['diagram_code'].system_context, language='python')
+    # 2. View Column (Render Mermaid)
+    with col_view_d:
+        diagram_code = st.session_state["project_state"]["diagram_code"]
+        
+        if diagram_code:
+            st.subheader("System Context")
+            render_mermaid(diagram_code.system_context)
+            
+            st.subheader("Container Diagram")
+            render_mermaid(diagram_code.container_diagram)
+            
+            st.subheader("Data Flow")
+            render_mermaid(diagram_code.data_flow)
         else:
-            st.info("No diagrams available yet.")
-            if st.button("🚀 Generate Diagram Now", type="primary"):
-                with st.spinner("🔨 Generating Diagram..."):
-                    try:
-                        llm = get_llm(res['provider'], res['api_key'], "fast")
-                        meter = TokenMeter()
-                        # Assuming visual_architect is available in agents.py
-                        diagram_code = agents.visual_architect(hld, llm, meter)
-                        st.session_state["current_result"]["diagram_code"] = diagram_code
-                        st.rerun()
-                    except Exception as e:
-                        st.error(f"Diagram generation failed: {e}")
+            st.info("No diagrams generated yet.")

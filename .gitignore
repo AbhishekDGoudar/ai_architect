@@ -6,6 +6,7 @@ dist/
 wheels/
 *.egg-info
 output_project/
+output/
 
 # Virtual environments
 .venv

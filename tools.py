@@ -12,73 +12,80 @@ try:
 except ImportError:
     HAS_COOKIECUTTER = False
 
+
+def hld_to_mermaid(hld) -> dict:
+    """
+    Deterministically converts HLD Pydantic object to Mermaid.js strings.
+    No LLM involved.
+    """
+    
+    # 1. System Context (Simple)
+    # Assumes a central system with external interfaces
+    system_context = "graph TD\n"
+    system_context += "    User((User))\n"
+    system_context += "    System[System Boundary]\n"
+    system_context += "    User -->|Uses| System\n"
+    
+    if hld.architecture_overview.external_interfaces:
+        for ext in hld.architecture_overview.external_interfaces:
+            # Sanitize name
+            safe_ext = ext.replace(" ", "_").replace("-", "_")
+            system_context += f"    {safe_ext}[{ext}]\n"
+            system_context += f"    System -->|Integrates| {safe_ext}\n"
+
+    # 2. Container Diagram (Components & Database)
+    container = "graph TD\n"
+    
+    # Create nodes for Core Components
+    for comp in hld.core_components:
+        safe_name = comp.name.replace(" ", "_")
+        container += f"    {safe_name}[{comp.name}]\n"
+        
+        # Add dependencies
+        for dep in comp.component_dependencies:
+            safe_dep = dep.replace(" ", "_")
+            container += f"    {safe_name} --> {safe_dep}\n"
+            
+    # Add Storage
+    for store in hld.data_architecture.storage_choices:
+        safe_store = store.technology.replace(" ", "_")
+        safe_comp = store.component.replace(" ", "_")
+        container += f"    {safe_store}[({store.technology})]\n"
+        container += f"    {safe_comp} -->|Reads/Writes| {safe_store}\n"
+
+    # 3. Data Flow (Sequence Diagram)
+    data_flow = "sequenceDiagram\n    autonumber\n"
+    
+    # Naive generation based on event flows or user stories
+    # (Since we don't have a strict sequence step list in HLD, we visualize the Event Flows)
+    for flow in hld.architecture_overview.event_flows:
+        # Assuming flow.components_involved is ordered list: A, B, C
+        comps = flow.components_involved
+        if len(comps) >= 2:
+            for i in range(len(comps) - 1):
+                data_flow += f"    {comps[i]}->>{comps[i+1]}: {flow.description}\n"
+
+    return {
+        "system_context": system_context,
+        "container_diagram": container,
+        "data_flow": data_flow
+    }
+
+# CHANGED: Replaced the entire run_diagram_code function
 def run_diagram_code(code_str: str, filename="architecture_diagram"):
     """
-    Executes the generated diagram code in a temporary directory to ensure 
-    the output file is captured correctly, regardless of what the LLM names it.
+    Saves Mermaid code to a file for reference. 
+    (Rendering happens in the UI).
     """
     try:
-        # 1. Clean the code string
-        clean_code = code_str.replace("```python", "").replace("```", "").strip()
-        
-        # 2. Define safe execution environment imports
-        # Note: We inject a specific filename into the Diagram context if possible, 
-        # but reliability is higher if we just catch whatever PNG is made.
-        exec_globals = {}
-        common_imports = """
-from diagrams import Diagram, Cluster, Edge
-from diagrams.aws.compute import EC2, ECS, EKS, Lambda
-from diagrams.aws.database import RDS, DynamoDB, ElastiCache, Redshift
-from diagrams.aws.network import ELB, Route53, VPC, APIGateway
-from diagrams.aws.storage import S3, EBS
-from diagrams.aws.integration import SQS, SNS
-from diagrams.onprem.compute import Server
-from diagrams.onprem.database import PostgreSQL, MongoDB, Redis, Cassandra
-from diagrams.onprem.queue import Kafka
-from diagrams.programming.language import Python, Go, Java, Nodejs
-from diagrams.programming.framework import React, Angular, Vue
-"""
-        exec(common_imports, exec_globals)
-        
-        # 3. Execute in a temporary directory to isolate the output
-        current_dir = os.getcwd()
-        generated_image_path = None
-        
-        with tempfile.TemporaryDirectory() as temp_dir:
-            # Change to temp dir so 'diagrams' lib saves there
-            os.chdir(temp_dir)
-            
-            try:
-                # Capture stdout to prevent clutter
-                output_buffer = io.StringIO()
-                with contextlib.redirect_stdout(output_buffer), contextlib.redirect_stderr(output_buffer):
-                     exec(clean_code, exec_globals)
-                
-                # Find any PNG generated
-                files = [f for f in os.listdir('.') if f.endswith('.png')]
-                if files:
-                    # Sort by modification time just in case, though temp dir is fresh
-                    files.sort(key=os.path.getmtime, reverse=True)
-                    newest_file = files[0]
-                    
-                    # Move to actual output location
-                    final_path = os.path.join(current_dir, f"{filename}.png")
-                    shutil.move(newest_file, final_path)
-                    generated_image_path = f"{filename}.png"
-            except Exception as e:
-                return f"Execution Error: {str(e)}"
-            finally:
-                # Always restore CWD
-                os.chdir(current_dir)
-        
-        if generated_image_path:
-            return generated_image_path
-            
-        return "Error: No PNG generated by the code."
-
+        # Just save the text file
+        with open(f"{filename}.mmd", "w") as f:
+            f.write(code_str)
+        return f"{filename}.mmd"
     except Exception as e:
-        return f"Diagram System Error: {str(e)}"
+        return f"Error saving mermaid file: {str(e)}"
 
+# generate_scaffold function remains unchanged
 def generate_scaffold(structure, output_dir="./output_project") -> list[str]:
     logs = []
     if structure.cookiecutter_url and "http" in structure.cookiecutter_url and HAS_COOKIECUTTER:

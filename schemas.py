@@ -45,9 +45,10 @@ class BusinessContext(BaseModel):
         return v
 
 class ArchitectureDiagrams(BaseModel):
-    system_context: str = Field(description="Python code with 'diagrams' library for System Context Diagram.")
-    container_diagram: str = Field(description="Python code with 'diagrams' library for Container Diagram.")
-    data_flow: str = Field(description="Python code with 'diagrams' library for Data Flow Diagram.")
+    # CHANGED: Updated descriptions to request Mermaid syntax
+    system_context: str = Field(description="Mermaid.js code (graph TD or C4Context) for System Context.")
+    container_diagram: str = Field(description="Mermaid.js code (graph TD with subgraphs) for Container Diagram.")
+    data_flow: str = Field(description="Mermaid.js code (sequenceDiagram) for Data Flow.")
 
     @field_validator('system_context', 'container_diagram')
     def code_must_be_valid(cls, v):

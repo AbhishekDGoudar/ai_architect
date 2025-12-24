@@ -101,21 +101,32 @@ def refiner_node(state: AgentState):
     }
 
 def visuals_node(state: AgentState):
-    llm = get_llm(state['provider'], state['api_key'], "fast")
-    meter = TokenMeter()
-    diagram_spec = agents.visual_architect(state['hld'], llm, meter)
+    # REMOVED: llm = get_llm(...) 
+    # REMOVED: diagram_spec = agents.visual_architect(...)
     
+    # NEW: Deterministic Generation
+    # We construct the object manually using the tool we just wrote
+    mermaid_code = tools.hld_to_mermaid(state['hld'])
+    
+    # Wrap it in the Schema so the UI can read it
+    from schemas import ArchitectureDiagrams
+    diagram_spec = ArchitectureDiagrams(
+        system_context=mermaid_code["system_context"],
+        container_diagram=mermaid_code["container_diagram"],
+        data_flow=mermaid_code["data_flow"]
+    )
+    
+    # Save files (Optional, since we have the string in memory)
     paths = []
-    # Execute code
-    for code in [diagram_spec.system_context, diagram_spec.container_diagram, diagram_spec.data_flow]:
-        if code:
-            paths.append(tools.run_diagram_code(code))
+    paths.append(tools.run_diagram_code(diagram_spec.system_context, "system_context"))
+    paths.append(tools.run_diagram_code(diagram_spec.container_diagram, "container_diagram"))
+    paths.append(tools.run_diagram_code(diagram_spec.data_flow, "data_flow"))
     
     return {
         "diagram_code": diagram_spec,
         "diagram_path": paths,
-        "total_tokens": state.get("total_tokens", 0) + meter.total_tokens,
-        "logs": [{"role": "Visuals", "message": "Diagrams generated & rendered"}]
+        "total_tokens": state.get("total_tokens", 0), # No tokens used!
+        "logs": [{"role": "Visuals", "message": "Diagrams generated deterministically"}]
     }
 
 def fix_diagram_node(state: AgentState):
