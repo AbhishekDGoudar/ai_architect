@@ -1,6 +1,6 @@
 from langchain_core.language_models import BaseChatModel
 from typing import List, Optional
-
+import datetime
 # Import the strictly required unified schemas
 from schemas import (
     HighLevelDesign, LowLevelDesign, JudgeVerdict, 
@@ -93,7 +93,7 @@ def team_lead(hld: HighLevelDesign, llm: BaseChatModel, meter: TokenMeter):
 def visual_architect(hld: HighLevelDesign, llm: BaseChatModel, meter: TokenMeter):
     """Generates Python code for Architecture Diagrams."""
     hld_summary = hld.model_dump_json(include={'core_components', 'architecture_overview', 'data_architecture'})
-    
+    today = datetime.date.today().isoformat()
     system_msg = f"""
     You are a Visualization Expert.
     Generate Mermaid.js code for 3 diagrams: System Context, Container, Data Flow.

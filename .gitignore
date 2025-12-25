@@ -10,3 +10,4 @@ output/
 
 # Virtual environments
 .venv
+.env
