@@ -593,7 +593,11 @@ with st.sidebar:
     st.title("⚙️ Studio Settings")
     
     # LLM Config
-    provider = st.selectbox("LLM Provider", ["openai", "gemini", "claude", "ollama"], index=1)
+    provider = st.selectbox(
+        "LLM Provider", 
+        ["openai", "gemini", "claude", "ollama"],
+        index=["openai", "gemini", "claude", "ollama"].index(st.session_state["project_state"]["provider"])  # Set the default index from session state
+    )
     st.session_state["project_state"]["provider"] = provider
     
     api_key = st.text_input("API Key", type="password", value=st.session_state.get("api_key", ""))
@@ -622,10 +626,9 @@ with st.sidebar:
             try:
                 data = load_snapshot(selected_snap)
                 # Merge loaded data into session state
-                st.session_state["project_state"].update(data)
-                import pdb; pdb.set_trace()
                 if data.get("provider", ""):
-                    st.session_state["provider"] = data["provider"]
+                    st.session_state["project_state"]["provider"] = data["provider"]
+                st.session_state["project_state"].update(data)
                 st.rerun()
             except Exception as e:
                 st.error(f"Load failed: {e}")
