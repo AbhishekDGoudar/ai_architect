@@ -595,8 +595,8 @@ with st.sidebar:
     # LLM Config
     provider = st.selectbox(
         "LLM Provider", 
-        ["openai", "gemini", "claude", "ollama"],
-        index=["openai", "gemini", "claude", "ollama"].index(st.session_state["project_state"]["provider"])  # Set the default index from session state
+        ["openai", "gemini", "claude"],
+        index=["openai", "gemini", "claude"].index(st.session_state["project_state"]["provider"])  # Set the default index from session state
     )
     st.session_state["project_state"]["provider"] = provider
     
