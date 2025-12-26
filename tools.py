@@ -1,4 +1,6 @@
+
 import os
+import requests
 import io
 import contextlib
 import time
@@ -130,3 +132,57 @@ def generate_scaffold(structure, output_dir="./output_project") -> list[str]:
             
     logs.append(f"✅ Scaffolding complete in {base_path}")
     return logs
+
+import os
+import requests
+
+# Ensure knowledge base folder exists
+def ensure_knowledge_base_folder():
+    if not os.path.exists("knowledge_base"):
+        os.makedirs("knowledge_base")
+
+# Download book function
+def download_book(book_name, book_url, folder="knowledge_base"):
+    """
+    Download a book from a URL and save it to the knowledge base folder.
+    If the book already exists, it will be skipped.
+    """
+    ensure_knowledge_base_folder()
+
+    # Path where the book will be saved
+    book_filename = os.path.join(folder, f"{book_name}.pdf")
+
+    # Check if the book already exists
+    if os.path.exists(book_filename):
+        print(f"'{book_name}' already exists, skipping download.")
+        return
+    
+    try:
+        # Get the content of the book
+        response = requests.get(book_url)
+
+        # Check if request was successful (status code 200)
+        if response.status_code == 200:
+            # Save the book content to the knowledge base folder
+            with open(book_filename, "wb") as file:
+                file.write(response.content)  # Write binary content (PDF)
+
+            print(f"'{book_name}' downloaded and saved to {book_filename}")
+        else:
+            print(f"Failed to download '{book_name}', Status code: {response.status_code}")
+
+    except Exception as e:
+        print(f"Error downloading '{book_name}': {e}")
+
+# Function to download multiple books
+def download_multiple_books(books_map = {
+        "Azure for Architect": "https://tanthiamhuat.wordpress.com/wp-content/uploads/2019/09/azure_for_architects.pdf",
+        "AWS for Architect": "https://d1.awsstatic.com/whitepapers/aws-overview.pdf",
+        "GCP for Architect": "https://www.citadelcloudmanagement.com/wp-content/uploads/2023/05/2a1631cf2dcc736f8330e7d54571ba13Google-Cloud-Platform-in-Action-PDFDrive-.pdf",
+        "Design Patterns": "https://www.javier8a.com/itc/bd1/articulo.pdf",
+        "Guide to GCP": "https://unidel.edu.ng/focelibrary/books/A-Complete-Guide-to-the-Google-Cloud-Platform.pdf",
+        "Designing Data-Intensive Applications": "https://github.com/letthedataconfess/Data-Engineering-Books/blob/main/Book-2Designing-data-intensive-applications.pdf"
+    }, folder="knowledge_base"):
+    for book_name, book_url in books_map.items():
+        download_book(book_name, book_url, folder)
+

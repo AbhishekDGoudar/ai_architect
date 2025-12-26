@@ -8,11 +8,13 @@ import agents
 from graph import app_graph
 from schemas import HighLevelDesign, LowLevelDesign
 from storage import save_snapshot, list_snapshots, load_snapshot, delete_snapshot
-from tools import generate_scaffold
+from tools import generate_scaffold, download_multiple_books
 from model_factory import get_llm
 from callbacks import TokenMeter
 from rag import knowledge  # Knowledge base engine
 import streamlit.components.v1 as components
+
+download_multiple_books()
 
 st.set_page_config(page_title="AI Architect Studio", page_icon="🏗️", layout="wide")
 
