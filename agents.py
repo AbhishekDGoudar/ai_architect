@@ -90,30 +90,6 @@ def team_lead(hld: HighLevelDesign, llm: BaseChatModel, meter: TokenMeter):
         config={"callbacks": [meter]}
     )
 
-def visual_architect(hld: HighLevelDesign, llm: BaseChatModel, meter: TokenMeter):
-    """Generates Python code for Architecture Diagrams."""
-    hld_summary = hld.model_dump_json(include={'core_components', 'architecture_overview', 'data_architecture'})
-    today = datetime.date.today().isoformat()
-    system_msg = f"""
-    You are a Visualization Expert.
-    Generate Mermaid.js code for 3 diagrams: System Context, Container, Data Flow.
-
-    RULES:
-    - Use standard Mermaid syntax (e.g. `graph TD`, `sequenceDiagram`).
-    - Do NOT use Markdown backticks (```) in the output fields, just the raw code.
-    - For System Context: Use `graph TD` showing external systems and user interacting with the main system.
-    - For Container: Use `graph TD` with `subgraph` to group components.
-    - For Data Flow: Use `sequenceDiagram` to show interaction steps.
-    IMPORTANT: Consider the current date {today}.
-
-    CONTEXT:
-    {hld_summary}
-    """
-    structured_llm = llm.with_structured_output(ArchitectureDiagrams)
-    return structured_llm.invoke(
-        [("system", system_msg), ("human", "Generate diagram code.")],
-        config={"callbacks": [meter]}
-    )
 
 def architecture_judge(hld: HighLevelDesign, lld: LowLevelDesign, llm: BaseChatModel, meter: TokenMeter):
     """Evaluates consistency between HLD and LLD."""
@@ -158,31 +134,74 @@ def reiteration_agent(judge: JudgeVerdict, hld: HighLevelDesign, lld: LowLevelDe
         config={"callbacks": [meter]}
     )
 
-def diagram_validator(hld: HighLevelDesign, llm: BaseChatModel, meter: TokenMeter):
-    """Validates the generated diagram code."""
-    if not hld.diagrams:
-        diagram_content = "No diagrams were generated."
-    else:
-        diagram_content = f"""
-        System Context Code: {hld.diagrams.system_context}
-        Container Code: {hld.diagrams.container_diagram}
-        """
-    
-    hld_components = [c.name for c in hld.core_components]
-    
+def visual_architect(hld: HighLevelDesign, llm: BaseChatModel, meter: TokenMeter):
+    """Generates Python code for Architecture Diagrams."""
+    hld_summary = hld.model_dump_json(include={'core_components', 'architecture_overview', 'data_architecture'})
+    today = datetime.date.today().isoformat()
     system_msg = f"""
-    You are a Diagram QA Expert. 
-    1. Check that the code is valid Mermaid.js syntax.
-    2. Ensure it starts with valid keywords like 'graph', 'sequenceDiagram', etc.
-    3. Ensure all HLD core components are represented.
+    You are a Visualization Expert.
+    Generate Mermaid.js code for 3 diagrams: System Context, Container, Data Flow.
+
+    RULES:
+    - Use standard Mermaid syntax (e.g. `graph TD`, `sequenceDiagram`).
+    - Do NOT use Markdown backticks (```) in the output fields, just the raw code.
+    - For System Context: Use `graph TD` showing external systems and user interacting with the main system.
+    - For Container: Use `graph TD` with `subgraph` to group components.
+    - For Data Flow: Use `sequenceDiagram` to show interaction steps.
+    IMPORTANT: Consider the current date {today}.
+
+    CONTEXT:
+    {hld_summary}
     """
-    
-    structured_llm = llm.with_structured_output(DiagramValidationResult)
-    
+    structured_llm = llm.with_structured_output(ArchitectureDiagrams)
     return structured_llm.invoke(
-        [("system", system_msg), ("human", diagram_content)],
+        [("system", system_msg), ("human", "Generate diagram code.")],
         config={"callbacks": [meter]}
     )
+
+def diagram_fixer(
+    system_context_code: str, container_diagram_code: str, data_flow_code: str,
+    system_context_error: str, container_diagram_error: str, data_flow_error: str,
+    llm: BaseChatModel, meter: TokenMeter
+) -> ArchitectureDiagrams:
+    """
+    Receives the Mermaid code and errors for all three diagrams,
+    returns corrected versions for all diagrams in a single LLM call.
+    """
+    system_msg = f"""
+    You are a Mermaid.js diagram expert.
+
+    The following diagrams have syntax errors. Please correct the Mermaid.js code for each diagram:
+
+    1. **System Context Diagram**:
+    Error: {system_context_error}
+    Original code:
+    {system_context_code}
+
+    2. **Container Diagram**:
+    Error: {container_diagram_error}
+    Original code:
+    {container_diagram_code}
+
+    3. **Data Flow Diagram**:
+    Error: {data_flow_error}
+    Original code:
+    {data_flow_code}
+
+    Please correct each Mermaid.js diagram code and return only valid code for each diagram.
+    Do NOT change the logic or structure unnecessarily.
+    """
+
+    # Use LLM to fix all three diagrams in one call
+    structured_llm = llm.with_structured_output(ArchitectureDiagrams)
+    fixed_code = structured_llm.invoke(
+        [("system", system_msg), ("human", "Fix the diagrams.")],
+        config={"callbacks": [meter]}
+    )
+
+    return fixed_code
+
+
 
 def scaffold_architect(lld: LowLevelDesign, llm: BaseChatModel, meter: TokenMeter):
     """Generates the file structure and starter code on-demand."""
@@ -208,33 +227,5 @@ def scaffold_architect(lld: LowLevelDesign, llm: BaseChatModel, meter: TokenMete
     structured_llm = llm.with_structured_output(ProjectStructure)
     return structured_llm.invoke(
         [("system", system_msg), ("human", "Generate project scaffolding.")],
-        config={"callbacks": [meter]}
-    )
-
-def diagram_fixer(code: str, error_msg: str, llm: BaseChatModel, meter: TokenMeter):
-    """
-    Analyzes the error and the code to produce a fixed version.
-    """
-    system_msg = f"""
-    You are a Mermaid.js Expert.
-    Fix the following Mermaid code based on the error (if any) or syntax issues.
-
-    ERROR: {error_msg}
-    BROKEN CODE: {code}
-
-    RULES:
-    - Return ONLY valid Mermaid.js code.
-    """
-    
-    # We expect a raw string or a simple object. 
-    # For simplicity, we can ask for a structured object to ensure we get clean code.
-    from schemas import ArchitectureDiagrams # Re-use or make a simple wrapper
-    
-    # Using the existing ArchitectureDiagrams schema to wrap the single code block 
-    # (or you can treat the output as a raw string if your LLM setup supports it)
-    structured_llm = llm.with_structured_output(ArchitectureDiagrams)
-
-    return structured_llm.invoke(
-        [("system", system_msg), ("human", "Fix this code.")],
         config={"callbacks": [meter]}
     )

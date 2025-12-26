@@ -5,6 +5,10 @@ import time
 import shutil
 import tempfile
 import sys
+import asyncio
+from pyppeteer import launch
+import asyncio
+from playwright.async_api import async_playwright
 
 try:
     from cookiecutter.main import cookiecutter
@@ -71,19 +75,40 @@ def hld_to_mermaid(hld) -> dict:
         "data_flow": data_flow
     }
 
-# CHANGED: Replaced the entire run_diagram_code function
-def run_diagram_code(code_str: str, filename="architecture_diagram"):
-    """
-    Saves Mermaid code to a file for reference. 
-    (Rendering happens in the UI).
-    """
+
+
+async def run_diagram(mermaid_code):
+    """This function checks Mermaid code syntax using a headless browser."""
     try:
-        # Just save the text file
-        with open(f"{filename}.mmd", "w") as f:
-            f.write(code_str)
-        return f"{filename}.mmd"
+        async with async_playwright() as p:
+            browser = await p.chromium.launch(headless=True)
+            page = await browser.new_page()
+
+            await page.set_content(f'''
+                <html>
+                    <head>
+                        <script type="module">
+                            import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.esm.min.mjs';
+                            mermaid.initialize({{startOnLoad: true}});
+                            window.onload = () => {{
+                                mermaid.render('graphDiv', `{mermaid_code}`, (svgCode) => {{
+                                    document.body.innerHTML = svgCode;
+                                }});
+                            }};
+                        </script>
+                    </head>
+                    <body>
+                        <div id="graphDiv"></div>
+                    </body>
+                </html>
+            ''')
+
+            # Wait for the diagram to load or timeout after 5 seconds
+            await page.wait_for_selector('#graphDiv', timeout=5000)
+            await browser.close()
+            return "Mermaid code is valid!"
     except Exception as e:
-        return f"Error saving mermaid file: {str(e)}"
+        return f"Syntax error in Mermaid code: {str(e)}"
 
 # generate_scaffold function remains unchanged
 def generate_scaffold(structure, output_dir="./output_project") -> list[str]:

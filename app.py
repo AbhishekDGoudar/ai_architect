@@ -16,6 +16,18 @@ import streamlit.components.v1 as components
 
 st.set_page_config(page_title="AI Architect Studio", page_icon="🏗️", layout="wide")
 
+class Component:
+    def __init__(self, name, class_structure_desc, module_boundaries, method_details, interface_specifications, dependency_direction, versioning, error_handling_local, security_considerations):
+        self.component_name = name
+        self.class_structure_desc = class_structure_desc
+        self.module_boundaries = module_boundaries
+        self.method_details = method_details
+        self.interface_specifications = interface_specifications
+        self.dependency_direction = dependency_direction
+        self.versioning = versioning
+        self.error_handling_local = error_handling_local
+        self.security_considerations = security_considerations
+
 # ==========================================
 # 🧠 SESSION STATE INITIALIZATION
 # ==========================================
@@ -40,6 +52,40 @@ if "running_task" not in st.session_state:
 # 🛠️ HELPER FUNCTIONS
 # ==========================================
 
+def render_card(title, body_html, bg_color="#FFFFFF", accent="#333"):
+    """
+    Renders a fixed-height card with a very light background by default and rounded corners.
+    """
+    st.markdown(
+        f"""
+        <div style="
+            background-color:{bg_color};
+            padding:16px;
+            margin-bottom:16px;
+            border-left:6px solid {accent};
+            border:1px solid rgba(0,0,0,0.08);
+            height:225px;        /* fixed height */
+            overflow:auto;       /* scroll if content is too long */
+            border-radius:12px;  /* rounded corners */
+        ">
+            <h5 style="margin-top:0;">{title}</h5>
+            {body_html}
+        </div>
+        """,
+        unsafe_allow_html=True
+    )
+
+def render_cards_2_per_row(items, render_fn=render_card, item_per_row=2):
+    """
+    Renders cards in rows of `item_per_row`, defaulting to render_card.
+    """
+    for i in range(0, len(items), item_per_row):
+        cols = st.columns(item_per_row)
+        for j, item in enumerate(items[i:i+item_per_row]):
+            with cols[j]:
+                render_fn(item)
+
+
 def calculate_cost(tokens, provider):
     # Rough estimates per 1M tokens (blended input/output)
     rates = {
@@ -52,12 +98,22 @@ def calculate_cost(tokens, provider):
     cost = (tokens / 1_000_000) * rate
     return f"${cost:.4f}"
 
+
 def render_list(items, label):
+    # Bold label
     st.markdown(f"**{label}:**")
-    if not items: st.caption("None")
-    else: st.markdown("\n".join([f"- {i}" for i in items]))
+    
+    # If no items, show "None" in caption style
+    if not items:
+        st.caption("None")
+    else:
+        # Join items as a bullet list
+        st.markdown("\n".join([f"- {item}" for item in items]))
 
 
+def render_markdown_card(title, body):
+    st.markdown(f"### {title}")  # Sub-header for title (h3)
+    st.markdown(body)  # Body content
 
 def render_mermaid(code: str, height=500):
     """
@@ -85,14 +141,21 @@ def display_hld(hld: HighLevelDesign, container):
         # Business Context
         with st.expander("1. Business Context", expanded=True):
             st.write(f"**Problem:** {hld.business_context.problem_statement}")
-            c1, c2, c3 = st.columns(3)
+            c1, c2, = st.columns(2)
+            c3, c4, = st.columns(2)
+            c5, c6, = st.columns(2)
             with c1: render_list(hld.business_context.business_goals, "Goals")
-            with c2: render_list(hld.business_context.stakeholders, "Stakeholders")
-            with c3: render_list(hld.business_context.change_log, "Change Log")
-            render_list(hld.business_context.in_scope, "In Scope")
-            render_list(hld.business_context.out_of_scope, "Out of Scope")
-            render_list(hld.business_context.assumptions_constraints, "Constraints")
-            render_list(hld.business_context.non_goals, "Non-goals")
+            with c2: render_list(hld.business_context.non_goals, "Non-goals")
+
+            with c3: render_list(hld.business_context.in_scope, "IN Scope")
+            with c4: render_list(hld.business_context.out_of_scope, "Out of Scope")
+            
+            with c5: render_list(hld.business_context.assumptions_constraints, "Constraints")
+            with c6: render_list(hld.business_context.stakeholders, "Stakeholders")
+            
+            render_list(hld.business_context.change_log, "Change Log")
+            
+            
 
         # Architecture Overview
         with st.expander("2 & 3. Architecture Overview & Components", expanded=True):
@@ -102,27 +165,45 @@ def display_hld(hld: HighLevelDesign, container):
             
             # Tech Stack
             if hld.architecture_overview.tech_stack:
+                st.markdown("<h6 style='font-size: 14px;'>Tech Rationale</h6>", unsafe_allow_html=True)
                 st.table(pd.DataFrame([{"Layer": i.layer, "Tech": i.technology} for i in hld.architecture_overview.tech_stack]))
             
-            # Layer tech rationale
-            for layer_rationale in hld.architecture_overview.layer_tech_rationale:
-                st.markdown(f"**Layer:** {layer_rationale.layer}")
-                st.write(f"**Technology:** {layer_rationale.technology}")
-                st.write(f"**Rationale:** {layer_rationale.rationale}")
-                st.write(f"**Trade-offs:** {layer_rationale.tradeoffs}")
+            if hld.architecture_overview.layer_tech_rationale:
+                st.markdown("<h6 style='font-size: 14px;'>Tech Rationale</h6>", unsafe_allow_html=True)
+                st.table(pd.DataFrame([{"Tech": i.technology, "Rationale": i.rationale, "Trade-offs": i.tradeoffs} for i in hld.architecture_overview.layer_tech_rationale]))
+
+
 
             # Event Flows
-            for event_flow in hld.architecture_overview.event_flows:
-                st.markdown(f"**Event Flow:** {event_flow.description}")
-                st.write(f"**Components Involved:** {', '.join(event_flow.components_involved)}")
-                st.write(f"**Event Types:** {', '.join(event_flow.event_types)}")
+            render_cards_2_per_row(
+                hld.architecture_overview.event_flows,
+                lambda flow: render_card(
+                    title="Event Flow",
+                    body_html=(
+                        f"<p>{flow.description}</p>"
+                        f"<p><b>Components Involved:</b> {', '.join(flow.components_involved)}</p>"
+                        f"<p><b>Event Types:</b> {', '.join(flow.event_types)}</p>"
+                    ),
+                    bg_color="#F4F2F2",  # ultra-light green
+                    accent="#2E7D32"
+                )
+            )
 
             # KPIs
-            for kpi in hld.architecture_overview.kpis:
-                st.markdown(f"**KPI Goal:** {kpi.goal}")
-                st.write(f"**Metric:** {kpi.metric}")
-                if kpi.target_value:
-                    st.write(f"**Target Value:** {kpi.target_value}")
+            render_cards_2_per_row(
+                hld.architecture_overview.kpis,
+                lambda kpi: render_card(
+                    title=f"KPI Goal: {kpi.goal}",
+                    body_html=(
+                        f"<p><b>Metric:</b> {kpi.metric}</p>"
+                        + (f"<p><b>Target Value:</b> {kpi.target_value}</p>" if kpi.target_value else "")
+                    ),
+                    bg_color="#F4F2F2",  # ultra-light orange
+                    accent="#EF6C00"
+                )
+            )
+
+
 
         # Data Architecture
         with st.expander("4. Data Architecture", expanded=True):
@@ -197,9 +278,10 @@ def display_hld(hld: HighLevelDesign, container):
 
         # Citations
         with st.expander("12. Citations", expanded=True):
-            for citation in hld.citations:
-                st.markdown(f"**Description:** {citation.description}")
-                st.write(f"**Source:** {citation.source}")
+            for i, citation in enumerate(hld.citations, 1):
+                st.markdown(f"{i}.  **Source:** {citation.source}  \n**Description:** {citation.description}")
+
+
 
 def display_lld(lld: LowLevelDesign, container):
     """Renders the FULL LLD content into a specific container."""
@@ -208,78 +290,227 @@ def display_lld(lld: LowLevelDesign, container):
     with container:
         st.header("Low-Level Design (LLD)")
 
-        # 1. Internal Component Logic
+        # Accordion component
         with st.expander("1. Internal Component Logic", expanded=True):
-            for dc in lld.detailed_components:
-                st.markdown(f"**{dc.component_name}**")
-                st.write(f"**Class Structure:** {dc.class_structure_desc}")
-                st.write(f"**Module Boundaries:** {dc.module_boundaries}")
-                render_list(dc.interface_specifications, "Interface Specifications")
-                st.write(f"**Dependency Direction:** {dc.dependency_direction}")
-                st.write(f"**Error Handling (Local):** {dc.error_handling_local}")
-                st.write(f"**Versioning:** {dc.versioning}")
-                st.write(f"**Security Considerations:** {dc.security_considerations}")
+            for i, dc in enumerate(lld.detailed_components):
+                # Replace divider with an accordion for each component
+                with st.expander(f"Component {i+1}: {dc.component_name}"):
+                    # --- 1. HEADER: Component Name & Class Structure ---
+                    st.subheader(dc.component_name)
+                    st.markdown("**Class Structure Definition**")
+                    # st.info creates a colored highlight box without needing an icon
+                    st.info(dc.class_structure_desc)
 
-                # Method details
-                if dc.method_details:
-                    st.subheader("Methods in this Component")
-                    for method in dc.method_details:
-                        st.markdown(f"**{method.method_name}**")
-                        st.write(f"**Purpose:** {method.purpose}")
-                        st.write(f"**Input Parameters:** {', '.join(method.input_params)}")
-                        st.write(f"**Output:** {method.output}")
-                        st.write(f"**Algorithm Summary:** {method.algorithm_summary}")
+                    st.caption(f"**Module Boundaries:** {dc.module_boundaries}")
 
-                # Failure Handling Flows
-                if dc.failure_handling_flows:
-                    st.subheader("Failure Handling Flows")
-                    for failure_flow in dc.failure_handling_flows:
-                        st.markdown(f"**Component:** {failure_flow.component}")
-                        st.write(f"**Flow Description:** {failure_flow.flow_description}")
-                        st.write(f"**Retry Strategy:** {failure_flow.retry_strategy}")
-                        st.write(f"**Fallback Mechanisms:** {failure_flow.fallback_mechanisms}")
+                    # --- 2. DETAILS: Tabbing Strategy ---
+                    # Clean text labels for tabs
+                    tab_methods, tab_interfaces, tab_specs = st.tabs([
+                        "Methods", 
+                        "Interfaces", 
+                        "Specifications"
+                    ])
 
-                # Load Benchmark Targets
-                if dc.load_benchmark_targets:
-                    st.subheader("Load Benchmark Targets")
-                    for benchmark in dc.load_benchmark_targets:
-                        st.markdown(f"**Component:** {benchmark.component}")
-                        st.write(f"**Expected Load:** {benchmark.expected_load}")
-                        st.write(f"**Benchmark Metric:** {benchmark.benchmark_metric}")
-                        st.write(f"**Target Value:** {benchmark.target_value}")
+                    # --- TAB A: Methods ---
+                    with tab_methods:
+                        if dc.method_details:
+                            for method in dc.method_details:
+                                # A bordered container creates a clean "Card" look
+                                with st.container():
+                                     with st.expander(f"#### {method.method_name}", expanded=False):
+                                        # Top row: Method Name and Purpose
+                                        # st.markdown(f"#### {method.method_name}") 
+                                        st.markdown(f"**Purpose:** {method.purpose}")
+                                        st.markdown(f"**Algorithm:** {method.algorithm_summary}")
+                                        
+                                        # Bottom: Technical I/O (Hidden by default to reduce noise)
+                                   
+                                        c1, c2 = st.columns(2)
+                                        with c1:
+                                            st.markdown("**Input Parameters**")
+                                            st.code(', '.join(method.input_params), language="text")
+                                        with c2:
+                                            st.markdown("**Output**")
+                                            st.code(method.output, language="text")
+                        else:
+                            st.caption("No specific methods defined for this component.")
+
+                    # --- TAB B: Interfaces ---
+                    with tab_interfaces:
+                        if dc.interface_specifications:
+                            st.markdown("**Interface List**")
+                            for interface in dc.interface_specifications:
+                                st.markdown(f"* {interface}")
+                        else:
+                            st.caption("No interface specifications listed.")
+
+                    # --- TAB C: Specifications (Grid Layout) ---
+                    with tab_specs:
+                        c1, c2 = st.columns(2)
+                        
+                        with c1:
+                            st.markdown("##### Dependency & Versioning")
+                            st.markdown(f"**Dependency Direction:** {dc.dependency_direction}")
+                            st.markdown(f"**Versioning:** {dc.versioning}")
+                        
+                        with c2:
+                            st.markdown("##### Reliability & Security")
+                            st.markdown(f"**Error Handling:** {dc.error_handling_local}")
+                            st.markdown(f"**Security Considerations:** {dc.security_considerations}")
 
         # 2. API Design
         with st.expander("2. API Design", expanded=True):
-            for api in lld.api_design:
-                st.markdown(f"**API Endpoint:** {api.endpoint}")
-                st.write(f"**Method:** {api.method}")
-                st.write(f"**Request Schema:** {api.request_schema}")
-                st.write(f"**Response Schema:** {api.response_schema}")
-                render_list(api.error_codes, "Error Codes")
-                st.write(f"**Rate Limiting Rule:** {api.rate_limiting_rule}")
-                st.write(f"**Authorization Mechanism:** {api.authorization_mechanism}")
-                st.write(f"**API Gateway Integration:** {api.api_gateway_integration}")
-                st.write(f"**Testing Strategy:** {api.testing_strategy}")
-                st.write(f"**Versioning Strategy:** {api.versioning_strategy}")
+            for i, api in enumerate(lld.api_design):
+                if i > 0:
+                    st.divider()
+                
+                # Create a specific container for each API Endpoint to frame it distinctly
+                with st.container(border=True):
+                    
+                    # --- 1. HEADER: Endpoint & Method ---
+                    # Using columns to put the Method (GET/POST) next to the Endpoint path
+                    c1, c2 = st.columns([1, 4])
+                    with c1:
+                        # Display HTTP Method with bold emphasis or color if supported
+                        # (Using standard markdown headers for hierarchy)
+                        st.markdown(f"### `{api.method}`") 
+                    with c2:
+                        st.markdown(f"### {api.endpoint}")
+
+                    # --- 2. TABS: Contract vs. Operations ---
+                    tab_contract, tab_ops, tab_qa = st.tabs([
+                        "Data Contract", 
+                        "Configuration & Security", 
+                        "Quality Assurance"
+                    ])
+
+                    # --- TAB A: Data Contract (Schemas) ---
+                    with tab_contract:
+                        sc1, sc2 = st.columns(2)
+                        with sc1:
+                            st.markdown("**Request Schema**")
+                            # st.code provides a nice 'technical' look for schemas (JSON/Structs)
+                            st.code(str(api.request_schema), language="json")
+                        with sc2:
+                            st.markdown("**Response Schema**")
+                            st.code(str(api.response_schema), language="json")
+
+                    # --- TAB B: Configuration (Auth, Limits) ---
+                    with tab_ops:
+                        c_op1, c_op2, c_op3 = st.columns(3)
+                        with c_op1:
+                            st.markdown("**Authorization**")
+                            st.info(api.authorization_mechanism)
+                        with c_op2:
+                            st.markdown("**Rate Limiting**")
+                            st.markdown(f"`{api.rate_limiting_rule}`")
+                        with c_op3:
+                            st.markdown("**Gateway Integration**")
+                            st.markdown(api.api_gateway_integration)
+
+                    # --- TAB C: QA (Errors, Testing, Versioning) ---
+                    with tab_qa:
+                        # Error Codes - check if it's a list or dict to format nicely
+                        st.markdown("**Error Codes**")
+                        if isinstance(api.error_codes, list):
+                            # Render as bullet points if list
+                            for err in api.error_codes:
+                                st.markdown(f"- `{err}`")
+                        else:
+                            st.markdown(str(api.error_codes))
+
+                        st.markdown("---")
+                        
+                        # Testing & Versioning side by side
+                        qa1, qa2 = st.columns(2)
+                        with qa1:
+                            st.markdown("**Testing Strategy**")
+                            st.caption(api.testing_strategy)
+                        with qa2:
+                            st.markdown("**Versioning Strategy**")
+                            st.caption(api.versioning_strategy)
 
         # 3. Data Model Deep Dive
         with st.expander("3. Data Model Deep Dive", expanded=True):
-            for data_model in lld.data_model_deep_dive:
-                st.markdown(f"**Entity:** {data_model.entity}")
-                render_list(data_model.attributes, "Attributes")
-                render_list(data_model.indexes, "Indexes")
-                render_list(data_model.constraints, "Constraints")
-                render_list(data_model.validation_rules, "Validation Rules")
-                render_list(data_model.foreign_keys, "Foreign Keys")
-                st.write(f"**Migration Strategy:** {data_model.migration_strategy}")
+            for i, data_model in enumerate(lld.data_model_deep_dive):
+                if i > 0:
+                    st.divider()
+
+                # --- 1. HEADER: Entity Name ---
+                # Using a recognizable icon/header for the table/entity
+                st.subheader(f"{data_model.entity}")
                 
-                if data_model.access_patterns:
-                    st.subheader("Access Patterns")
-                    for access_pattern in data_model.access_patterns:
-                        st.write(f"**Entity:** {access_pattern.entity}")
-                        st.write(f"**Pattern Description:** {access_pattern.pattern_description}")
-                        render_list(access_pattern.example_queries, "Example Queries")
-                        st.write(f"**Lifecycle Notes:** {access_pattern.lifecycle_notes}")
+                # --- 2. TABS: Schema vs. Usage vs. Management ---
+                tab_schema, tab_usage, tab_ops = st.tabs([
+                    "Schema Definition",
+                    "Access Patterns", 
+                    "Migration & Ops"
+                ])
+
+                # --- TAB A: Schema Definition (Structure) ---
+                with tab_schema:
+                    # Layout: Attributes on Left (Main), Constraints/Keys on Right (Metadata)
+                    c_left, c_right = st.columns([2, 1])
+                    
+                    with c_left:
+                        st.markdown("**Attributes**")
+                        # Check if attributes exist and list them cleanly
+                        if data_model.attributes:
+                            for attr in data_model.attributes:
+                                st.markdown(f"- `{attr}`")
+                        else:
+                            st.caption("No specific attributes defined.")
+                            
+                    with c_right:
+                        st.markdown("**Constraints & Keys**")
+                        with st.container(border=True):
+                            if data_model.constraints:
+                                st.caption("**Constraints:**")
+                                for c in data_model.constraints:
+                                    st.markdown(f"• {c}")
+                            
+                            if data_model.foreign_keys:
+                                st.caption("**Foreign Keys:**")
+                                for fk in data_model.foreign_keys:
+                                    st.markdown(f"• {fk}")
+
+                            if data_model.indexes:
+                                st.caption("**Indexes:**")
+                                for idx in data_model.indexes:
+                                    st.markdown(f"• `{idx}`")
+
+                        # Validation Rules moved here to sit with constraints
+                        if data_model.validation_rules:
+                            with st.expander("View Validation Rules"):
+                                for rule in data_model.validation_rules:
+                                    st.markdown(f"- {rule}")
+
+                # --- TAB B: Access Patterns (Usage) ---
+                with tab_usage:
+                    if data_model.access_patterns:
+                        for idx, ap in enumerate(data_model.access_patterns):
+                            with st.container(border=True):
+                                st.markdown(f"**Pattern {idx+1}:** {ap.pattern_description}")
+                                
+                                # Access Pattern Details
+                                c1, c2 = st.columns(2)
+                                with c1:
+                                    st.caption(f"**Target Entity:** {ap.entity}")
+                                with c2:
+                                    st.caption(f"**Lifecycle:** {ap.lifecycle_notes}")
+                                
+                                # Example Queries in Code Block for Syntax Highlighting
+                                if ap.example_queries:
+                                    st.markdown("**Example Queries:**")
+                                    queries_text = "\n".join(ap.example_queries)
+                                    st.code(queries_text, language="sql")
+                    else:
+                        st.info("No specific access patterns documented.")
+
+                # --- TAB C: Migration & Operations ---
+                with tab_ops:
+                    st.markdown("##### Migration Strategy")
+                    st.info(data_model.migration_strategy)
 
         # 4. Business Logic
         with st.expander("4. Business Logic", expanded=True):
@@ -343,8 +574,7 @@ def display_lld(lld: LowLevelDesign, container):
         # Citations
         with st.expander("12. Citations", expanded=True):
             for citation in lld.citations:
-                st.markdown(f"**Description:** {citation.description}")
-                st.write(f"**Source:** {citation.source}")
+                st.markdown(f"{i}.  **Source:** {citation.source}  \n**Description:** {citation.description}")
 
 def get_progress_config(task: str):
     """Progress bar configuration."""
@@ -393,6 +623,9 @@ with st.sidebar:
                 data = load_snapshot(selected_snap)
                 # Merge loaded data into session state
                 st.session_state["project_state"].update(data)
+                import pdb; pdb.set_trace()
+                if data.get("provider", ""):
+                    st.session_state["provider"] = data["provider"]
                 st.rerun()
             except Exception as e:
                 st.error(f"Load failed: {e}")
@@ -444,7 +677,12 @@ with st.container():
     req_text = st.text_area("Requirements", height=100, placeholder="Describe your system...", value=st.session_state["project_state"]["user_request"])
     st.session_state["project_state"]["user_request"] = req_text
     
-    if st.button("🚀 Generate Architecture", type="primary"):
+    if st.session_state["project_state"]["lld"] and st.session_state["project_state"]["hld"]:
+        button_label = "Regenerate"
+    else:
+        button_label = "Generate"
+
+    if st.button(f"🚀 {button_label} Architecture", type="primary"):
         if not api_key and provider != "ollama":
             st.error("API Key required.")
         else:
@@ -529,7 +767,7 @@ with t_code:
         with open(f"{output_dir}.zip", "rb") as f:
             st.download_button("⬇️ Download ZIP", f, file_name=f"{st.session_state['project_state']['project_name']}.zip")
     else:
-        st.write("No code generated yet.")
+        st.write("No code generated yet. Requires HLD and LLD.")
 
 with t_diag:
     col_act_d, col_view_d = st.columns([1, 4])

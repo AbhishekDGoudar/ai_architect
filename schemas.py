@@ -50,11 +50,11 @@ class ArchitectureDiagrams(BaseModel):
     container_diagram: str = Field(description="Mermaid.js code (graph TD with subgraphs) for Container Diagram.")
     data_flow: str = Field(description="Mermaid.js code (sequenceDiagram) for Data Flow.")
 
-    @field_validator('system_context', 'container_diagram')
-    def code_must_be_valid(cls, v):
-        if "Diagram" not in v:
-            raise ValueError("Code must use the 'diagrams' library.")
-        return v
+    # @field_validator('system_context', 'container_diagram')
+    # def code_must_be_valid(cls, v):
+    #     if "Diagram" not in v:
+    #         raise ValueError("Code must use the 'diagrams' library.")
+    #     return v
 
 # HLD Additions
 class LayerTechRationale(BaseModel):
@@ -78,7 +78,7 @@ class ArchitectureOverview(BaseModel):
     external_interfaces: List[str]
     user_stories: List[str]
     tech_stack: List[TechStackItem]
-    diagrams: List[ArchitectureDiagrams] = None
+    diagrams: List[ArchitectureDiagrams]
     layer_tech_rationale: List[LayerTechRationale] = Field(default_factory=list, description="Rationale for each layer's technology.")
     event_flows: List[EventFlowDescription] = Field(default_factory=list, description="Description of event-driven flows between components.")
     kpis: List[KPIMetric] = Field(default_factory=list, description="KPIs mapped to business goals.")

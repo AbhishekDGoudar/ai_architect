@@ -2,7 +2,7 @@
 
 Welcome to AI Architect Studio. This project is an autonomous design system that converts simple requirements into enterprise grade architecture documents. We bridge the gap between abstract ideas and concrete implementation plans using a team of AI agents.
 
-**Live Demo:** [https://your-project-link-here.com](https://your-project-link-here.com)
+**Live Demo:** [https://aiarchitect.streamlit.app/](https://aiarchitect.streamlit.app/)
 
 ## What It Does
 Building software architecture is complex. You need to think about business goals, data models, security compliance, and operational readiness all at once. This tool handles that cognitive load for you.
@@ -16,6 +16,15 @@ We use a multi agent workflow to ensure quality and depth.
 * **Security Specialist**: Intervenes to harden authentication, authorization, and compliance strategies.
 * **Team Lead**: Translates the high level strategy into a Low Level Design (LLD), focusing on APIs and schemas.
 * **Architecture Judge**: The quality control layer. This agent reviews the work of others, verifies diagram syntax, and rejects the design if it fails to meet standards.
+* 
+## Key Features
+* **Multi-Agent Orchestration:** A specialized team of 6+ AI agents (Manager, Lead, Security, Judge, Visuals, Scaffolder) that collaborate to build your design.
+* **RAG & Web Search:** Ground your architecture in reality. Upload your company's PDF standards or let the agents search the web for the latest tech stack compatibility.
+* **Self-Healing Diagrams:** Includes a dedicated "Diagram Validator" loop that automatically fixes broken Mermaid.js syntax to ensure your charts always render correctly.
+* **Project Scaffolding:** Goes beyond documentation. Generates a downloadable ZIP containing `docker-compose.yml`, `requirements.txt`, and boilerplate code based on the generated design.
+* **Strict Structural Integrity:** Uses **Pydantic** to enforce 100% valid JSON outputs, ensuring no missing fields in your API specs or data models.
+* **Cost Transparency:** Real-time token tracking and cost estimation for OpenAI, Gemini, and Claude models.
+
 
 ## Tech Stack
 We prioritized tools that offer reliability and type safety.
