@@ -2,3 +2,4 @@ graphviz
 poppler-utils
 poppler-data
 libgl1-mesa-glx
+tesseract-ocr
