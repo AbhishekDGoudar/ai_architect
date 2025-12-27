@@ -5,11 +5,14 @@ build/
 dist/
 wheels/
 *.egg-info
+
+# Project specific ignores
 output_project/
 output/
 chroma_db/
 knowledge_base/
 snapshot_db/
+temp_uploads/
 
 # Virtual environments
 .venv
