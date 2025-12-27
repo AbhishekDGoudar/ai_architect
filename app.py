@@ -775,7 +775,8 @@ with st.container():
     
     est_tokens = len(req_text) * 50 
     cost_str = calculate_cost(est_tokens, provider)
-    cost_metric_placeholder.metric(label="Estimated Cost", value="~"+cost_str, delta="~"+f"{est_tokens} Tokens")
+    if not st.session_state["project_state"].get("total_tokens") and cost_metric_placeholder:
+        cost_metric_placeholder.metric(label="Estimated Cost", value="~"+cost_str, delta="~"+f"{est_tokens} Tokens")
     
     if st.session_state["project_state"]["lld"] and st.session_state["project_state"]["hld"]:
         button_label = "Regenerate"
