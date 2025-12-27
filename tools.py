@@ -177,8 +177,7 @@ def download_multiple_books(books_map = {
         "AWS for Architect": "https://d1.awsstatic.com/whitepapers/aws-overview.pdf",
         "GCP for Architect": "https://www.citadelcloudmanagement.com/wp-content/uploads/2023/05/2a1631cf2dcc736f8330e7d54571ba13Google-Cloud-Platform-in-Action-PDFDrive-.pdf",
         "Design Patterns": "https://www.javier8a.com/itc/bd1/articulo.pdf",
-        "Designing Data-Intensive Applications": "https://github.com/letthedataconfess/Data-Engineering-Books/blob/main/Book-2Designing-data-intensive-applications.pdf"
-    }, folder="knowledge_base"):
+       }, folder="knowledge_base"):
     for book_name, book_url in books_map.items():
         download_book(book_name, book_url, folder)
 
