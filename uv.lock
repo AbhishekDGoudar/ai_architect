@@ -5667,7 +5667,7 @@ wheels = [
 ]
 
 [[package]]
-name = "software-team-agent"
+name = "ai-architect"
 version = "0.1.0"
 source = { virtual = "." }
 dependencies = [
