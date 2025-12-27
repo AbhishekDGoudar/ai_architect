@@ -13,6 +13,7 @@ chroma_db/
 knowledge_base/
 snapshot_db/
 temp_uploads/
+snapshots/
 
 # Virtual environments
 .venv
