@@ -212,8 +212,25 @@ class LoadBenchmarkTarget(BaseModel):
 
 class TestTraceability(BaseModel):
     requirement: str = Field(description="Requirement or business goal being tested.")
-    test_case_ids: List[str] = Field(description="IDs of test cases validating this requirement.")
+    test_description: List[str] = Field(description="Description of the test cases validating this requirement.")
     coverage_status: str = Field(description="Coverage status (e.g., full, partial, missing).")
+
+from pydantic import BaseModel, Field
+from typing import List
+
+class TestTraceability(BaseModel):
+    requirement: str = Field(description="Requirement or business goal being tested.")
+    test_type: str = Field(description="Type of test (e.g., unit test, integration test, regression).")
+    test_priority: str = Field(description="Priority of the test (e.g., low, medium, high).")
+    test_owner: str = Field(description="The person or team responsible for executing the test.")
+    test_methodology: str = Field(description="Testing methodology used (e.g., manual, automated, TDD).")
+    test_scenario: str = Field(description="A brief description of the test scenario being validated.")
+    test_steps: List[str] = Field(description="List of steps to perform during the test.")
+    expected_result: str = Field(description="The expected result of the test scenario.")
+    test_preconditions: List[str] = Field(description="List of preconditions required before the test can be executed.")
+    test_postconditions: List[str] = Field(description="List of postconditions to verify after the test is executed.")
+    test_data_requirements: List[str] = Field(description="List of test data inputs needed for the test.")
+
 
 class InternalComponentDesign(BaseModel):
     component_name: str

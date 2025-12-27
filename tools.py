@@ -112,8 +112,8 @@ async def run_diagram(mermaid_code):
     except Exception as e:
         return f"Syntax error in Mermaid code: {str(e)}"
 
-# generate_scaffold function remains unchanged
-def generate_scaffold(structure, output_dir="./output_project") -> list[str]:
+
+def generate_scaffold(structure, output_dir) -> list[str]:
     logs = []
     if structure.cookiecutter_url and "http" in structure.cookiecutter_url and HAS_COOKIECUTTER:
         try:
@@ -132,9 +132,6 @@ def generate_scaffold(structure, output_dir="./output_project") -> list[str]:
             
     logs.append(f"✅ Scaffolding complete in {base_path}")
     return logs
-
-import os
-import requests
 
 # Ensure knowledge base folder exists
 def ensure_knowledge_base_folder():
@@ -180,7 +177,6 @@ def download_multiple_books(books_map = {
         "AWS for Architect": "https://d1.awsstatic.com/whitepapers/aws-overview.pdf",
         "GCP for Architect": "https://www.citadelcloudmanagement.com/wp-content/uploads/2023/05/2a1631cf2dcc736f8330e7d54571ba13Google-Cloud-Platform-in-Action-PDFDrive-.pdf",
         "Design Patterns": "https://www.javier8a.com/itc/bd1/articulo.pdf",
-        "Guide to GCP": "https://unidel.edu.ng/focelibrary/books/A-Complete-Guide-to-the-Google-Cloud-Platform.pdf",
         "Designing Data-Intensive Applications": "https://github.com/letthedataconfess/Data-Engineering-Books/blob/main/Book-2Designing-data-intensive-applications.pdf"
     }, folder="knowledge_base"):
     for book_name, book_url in books_map.items():

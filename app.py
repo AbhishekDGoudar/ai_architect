@@ -11,11 +11,10 @@ from storage import save_snapshot, list_snapshots, load_snapshot, delete_snapsho
 from tools import generate_scaffold, download_multiple_books
 from model_factory import get_llm
 from callbacks import TokenMeter
-from rag import knowledge  # Knowledge base engine
+from rag import kb # Knowledge base engine
 import streamlit.components.v1 as components
 
-download_multiple_books()
-
+download_multiple_books()  # Ingest knowledge base at startup
 st.set_page_config(page_title="AI Architect Studio", page_icon="🏗️", layout="wide")
 
 class Component:
@@ -31,7 +30,7 @@ class Component:
         self.security_considerations = security_considerations
 
 # ==========================================
-# 🧠 SESSION STATE INITIALIZATION
+#  SESSION STATE INITIALIZATION
 # ==========================================
 if "project_state" not in st.session_state:
     st.session_state["project_state"] = {
@@ -53,6 +52,24 @@ if "running_task" not in st.session_state:
 # ==========================================
 # 🛠️ HELPER FUNCTIONS
 # ==========================================
+
+def get_priority_color(priority):
+    if priority == "High":
+        return "red"
+    elif priority == "Medium":
+        return "orange"
+    return "blue"
+
+# Check if the SQLite file exists
+def check_sqlite_folder_and_file_exists() -> bool:
+    """Check if the folder and SQLite file both exist. Returns True if both exist."""
+    chroma_db_folder = './chroma_db'
+    chroma_db_file = os.path.join(chroma_db_folder, 'sqlite3')
+    if os.path.isdir(chroma_db_folder) or os.path.exists(chroma_db_file):
+            return True  # Both the folder and file exist
+    return False 
+
+
 
 def render_card(title, body_html, bg_color="#FFFFFF", accent="#333"):
     """
@@ -568,10 +585,78 @@ def display_lld(lld: LowLevelDesign, container):
 
         # 11. Test Traceability
         with st.expander("11. Test Traceability", expanded=True):
-            for test_trace in lld.test_traceability:
-                st.write(f"**Requirement:** {test_trace.requirement}")
-                render_list(test_trace.test_case_ids, "Test Case IDs")
-                st.write(f"**Coverage Status:** {test_trace.coverage_status}")
+            st.markdown("### 🧪 Traceability Matrix & Execution")
+            st.caption("Verify requirements against test scenarios, execution steps, and expected outcomes.")
+            st.divider()
+
+            # Iterate through the Pydantic objects
+            for index, test in enumerate(lld.test_traceability):
+                
+                # --- HEADER SECTION ---
+                c1, c2, c3 = st.columns([0.7, 0.15, 0.15])
+                
+                with c1:
+                    # DOT NOTATION FIX: test.test_type instead of test.get('test_type')
+                    st.subheader(f"TC-{index+1}: {test.test_type}")
+                    st.markdown(f"**Requirement:** _{test.requirement}_")
+                
+                with c2:
+                    # DOT NOTATION FIX
+                    priority = test.test_priority
+                    color = get_priority_color(priority)
+                    st.markdown(f":{color}[**{priority} Priority**]")
+                    
+                with c3:
+                    # DOT NOTATION FIX
+                    st.markdown(f"**Owner:**\n{test.test_owner}")
+
+                # --- DETAIL SECTION ---
+                tab_overview, tab_execution, tab_data = st.tabs(["📝 Overview", "▶️ Execution Steps", "💾 Data & Env"])
+
+                # TAB 1: OVERVIEW
+                with tab_overview:
+                    st.markdown(f"**Scenario:** {test.test_scenario}")
+                    
+                    col_a, col_b = st.columns(2)
+                    with col_a:
+                        st.info(f"**Expected Result:**\n\n{test.expected_result}")
+                    with col_b:
+                        st.markdown("**Methodology:**")
+                        st.code(test.test_methodology, language="text")
+
+                # TAB 2: EXECUTION STEPS
+                with tab_execution:
+                    st.write("#### 🛠 Test Steps")
+                    # DOT NOTATION FIX: test.test_steps
+                    for i, step in enumerate(test.test_steps):
+                        st.checkbox(step, key=f"step_{index}_{i}")
+                    
+                    st.divider()
+                    
+                    with st.expander("Verify Post-conditions"):
+                        # DOT NOTATION FIX: test.test_postconditions
+                        for condition in test.test_postconditions:
+                            st.markdown(f"- {condition}")
+
+                # TAB 3: DATA & ENVIRONMENT
+                with tab_data:
+                    d_col1, d_col2 = st.columns(2)
+                    
+                    with d_col1:
+                        st.write("**Pre-conditions:**")
+                        # DOT NOTATION FIX: test.test_preconditions
+                        for pre in test.test_preconditions:
+                            st.markdown(f"- ✅ {pre}")
+                    
+                    with d_col2:
+                        st.write("**Test Data Requirements:**")
+                        # DOT NOTATION FIX: test.test_data_requirements
+                        for data_req in test.test_data_requirements:
+                            if "JSON" in data_req or "key" in data_req.lower():
+                                st.code(data_req, language="json")
+                            else:
+                                st.info(data_req)
+
 
         # Citations
         with st.expander("12. Citations", expanded=True):
@@ -611,8 +696,11 @@ with st.sidebar:
     st.subheader("📚 Knowledge Base")
     uploaded_kb = st.file_uploader("Upload Company Standards", type=["pdf", "txt"])
     if uploaded_kb:
-        res = knowledge.ingest_upload(uploaded_kb)
+        res = kb.ingest_upload(uploaded_kb)
         st.toast(res)
+    if check_sqlite_folder_and_file_exists():
+        if st.button("Ingest Knowledge Base"):
+            kb.ingest_directory()
     
     # Snapshots
     st.divider()
@@ -652,9 +740,12 @@ col_title, col_metrics, buttons = st.columns([3, 1, 0.5])
 with col_title:
     st.title("🤖 AI Architect Studio")
 with col_metrics:
-    tokens = st.session_state["project_state"]["total_tokens"]
-    cost_str = calculate_cost(tokens, provider)
-    st.metric(label="Estimated Cost", value=cost_str, delta=f"{tokens} Tokens")
+    if st.session_state["project_state"].get("total_tokens"):
+        tokens = st.session_state["project_state"]["total_tokens"]
+        cost_str = calculate_cost(tokens, provider)
+        st.metric(label="Total Cost", value=cost_str, delta=f"{tokens} Tokens")
+    else:
+        cost_metric_placeholder = st.empty()
 
 
 with buttons:
@@ -682,12 +773,16 @@ with st.container():
     req_text = st.text_area("Requirements", height=100, placeholder="Describe your system...", value=st.session_state["project_state"]["user_request"])
     st.session_state["project_state"]["user_request"] = req_text
     
+    est_tokens = len(req_text) * 50 
+    cost_str = calculate_cost(est_tokens, provider)
+    cost_metric_placeholder.metric(label="Estimated Cost", value="~"+cost_str, delta="~"+f"{est_tokens} Tokens")
+    
     if st.session_state["project_state"]["lld"] and st.session_state["project_state"]["hld"]:
         button_label = "Regenerate"
     else:
         button_label = "Generate"
 
-    if st.button(f"🚀 {button_label} Architecture", type="primary"):
+    if st.button(f"{button_label} Architecture", type="primary"):
         if not api_key and provider != "ollama":
             st.error("API Key required.")
         else:
@@ -732,7 +827,7 @@ if st.session_state["running_task"]:
 st.divider()
 
 # 4. Artifact Tabs
-t_hld, t_lld, t_code, t_diag = st.tabs(["🏛️ HLD", "💻 LLD", "🛠️ Code", "📂 Diagrams"])
+t_hld, t_lld, t_code, t_diag = st.tabs(["HLD", "LLD", "🛠️ Code", "Diagrams"])
 
 # --- HLD Tab ---
 with t_hld:
@@ -752,7 +847,8 @@ with t_lld:
 with t_code:
     col_act, col_view = st.columns([1, 4])
     with col_act:
-        if st.session_state["project_state"]["lld"]:
+        if st.session_state["project_state"]["lld"] and not st.session_state["project_state"]["scaffold"]:
+            st.write("Want to jump into building it? Click this button to receive a boilerplate code to kickstart your project.")
             if st.button("⚡ Generate Code"):
                 st.session_state["running_task"] = "code"
                 st.rerun()

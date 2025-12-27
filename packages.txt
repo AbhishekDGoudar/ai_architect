@@ -1,1 +1,3 @@
 graphviz
+poppler-utils
+poppler-data
