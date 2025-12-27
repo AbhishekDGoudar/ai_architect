@@ -7,6 +7,9 @@ wheels/
 *.egg-info
 output_project/
 output/
+chroma_db/
+knowledge_base/
+snapshot_db/
 
 # Virtual environments
 .venv
