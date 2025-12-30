@@ -11,6 +11,8 @@ import asyncio
 from pyppeteer import launch
 import asyncio
 from playwright.async_api import async_playwright
+import pypdf
+from io import BytesIO
 
 try:
     from cookiecutter.main import cookiecutter
@@ -171,13 +173,49 @@ def download_book(book_name, book_url, folder="knowledge_base"):
     except Exception as e:
         print(f"Error downloading '{book_name}': {e}")
 
+def convert_to_raw_url(github_url):
+    """
+    Converts a GitHub blob URL to a raw URL.
+    """
+    if 'github.com' in github_url:
+        # Replace "blob" with "raw" in the URL to get the raw file
+        raw_url = github_url.replace('github.com', 'raw.githubusercontent.com').replace('/blob/', '/')
+        return raw_url
+    return ""
+
 # Function to download multiple books
 def download_multiple_books(books_map = {
         "Azure for Architect": "https://tanthiamhuat.wordpress.com/wp-content/uploads/2019/09/azure_for_architects.pdf",
         "AWS for Architect": "https://d1.awsstatic.com/whitepapers/aws-overview.pdf",
         "GCP for Architect": "https://www.citadelcloudmanagement.com/wp-content/uploads/2023/05/2a1631cf2dcc736f8330e7d54571ba13Google-Cloud-Platform-in-Action-PDFDrive-.pdf",
         "Design Patterns": "https://www.javier8a.com/itc/bd1/articulo.pdf",
+        "Big Book on Data Engineering": "https://www.databricks.com/sites/default/files/2025-11/big-book-data-engineering.pdf",
+        "Fundamentals of Software Architecture": "https://github.com/littlee/littlee.github.io/raw/master/OReilly.Fundamentals.of.Software.Architecture.2020.1.pdf",
+        "Microservices Architecture": convert_to_raw_url("https://github.com/namhoangduc99/TargetOf2018/blob/master/Sam%20Newman-Building%20Microservices-O'Reilly%20Media%20(2015).pdf"),
+        "Domain Driven Design": convert_to_raw_url("https://github.com/gmoral/Books/blob/master/Domain%20Driven%20Design%20Tackling%20Complexity%20in%20the%20Heart%20of%20Software%20-%20Eric%20Evans.pdf"),
+        #"Clean Architecture": convert_to_raw_url("https://github.com/GunterMueller/Books-3/blob/master/Clean%20Architecture%20A%20Craftsman%20Guide%20to%20Software%20Structure%20and%20Design.pdf"),"
        }, folder="knowledge_base"):
     for book_name, book_url in books_map.items():
         download_book(book_name, book_url, folder)
 
+
+def extract_text_from_file(uploaded_file) -> str:
+    """Extracts text from PDF or TXT bytes in memory."""
+    try:
+        # 1. Handle PDF
+        if uploaded_file.type == "application/pdf":
+            reader = pypdf.PdfReader(BytesIO(uploaded_file.getvalue()))
+            text = []
+            for page in reader.pages:
+                text.append(page.extract_text())
+            return "\n".join(text)
+            
+        # 2. Handle Text
+        elif "text" in uploaded_file.type:
+            return str(uploaded_file.read(), "utf-8")
+            
+        else:
+            return "Unsupported file format. Please upload PDF or TXT."
+            
+    except Exception as e:
+        return f"Error reading file: {str(e)}"

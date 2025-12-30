@@ -10,7 +10,7 @@ from schemas import (
 )
 from callbacks import TokenMeter
 # Import the knowledge engine
-from rag import knowledge as kb 
+from rag import WebKnowledgeEngine
 
 # ==========================================
 # 🤖 AGENTS
@@ -19,7 +19,8 @@ from rag import knowledge as kb
 def engineering_manager(user_request: str, llm: BaseChatModel, meter: TokenMeter, feedback: str = ""):
     """Generates the initial High-Level Design (HLD)."""
     try:
-        context = kb.search(user_request, use_web=True, use_kb=True)
+        kb = WebKnowledgeEngine()
+        context = kb.search(user_request)
     except Exception:
         context = "No knowledge base context available."
     

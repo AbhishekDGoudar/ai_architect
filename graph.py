@@ -47,13 +47,13 @@ def manager_node(state: AgentState):
         meter=meter, 
         feedback=f"Use tech stack current as of {today}"
     )
-    
     return {
         "hld": hld,
         "generated_date": today,
         "total_tokens": state.get("total_tokens", 0) + meter.total_tokens,
         "logs": [{"role": "Manager", "message": "HLD drafted"}]
     }
+
 
 def security_node(state: AgentState):
     llm = get_llm(state['provider'], state['api_key'], "smart")

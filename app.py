@@ -5,17 +5,21 @@ import os
 import time
 from datetime import datetime
 import agents
+import re
+
 from graph import app_graph
 from schemas import HighLevelDesign, LowLevelDesign
 from storage import save_snapshot, list_snapshots, load_snapshot, delete_snapshot
 from tools import generate_scaffold, download_multiple_books
 from model_factory import get_llm
 from callbacks import TokenMeter
-from rag import kb # Knowledge base engine
+from rag import KnowledgeEngine, WebKnowledgeEngine # Knowledge base engine
 import streamlit.components.v1 as components
+from io import StringIO
+from pypdf import PdfReader
+from langchain_core.messages import HumanMessage, SystemMessage, AIMessage
 
-download_multiple_books()  # Ingest knowledge base at startup
-st.set_page_config(page_title="AI Architect Studio", page_icon="🏗️", layout="wide")
+st.set_page_config(page_title="AI Architect Studio", layout="wide")
 
 class Component:
     def __init__(self, name, class_structure_desc, module_boundaries, method_details, interface_specifications, dependency_direction, versioning, error_handling_local, security_considerations):
@@ -67,6 +71,7 @@ def check_sqlite_folder_and_file_exists() -> bool:
     chroma_db_file = os.path.join(chroma_db_folder, 'sqlite3')
     if os.path.isdir(chroma_db_folder) or os.path.exists(chroma_db_file):
             return True  # Both the folder and file exist
+    download_multiple_books() 
     return False 
 
 
@@ -692,215 +697,430 @@ with st.sidebar:
     
 
     # Knowledge Base
-    st.divider()
-    st.subheader("📚 Knowledge Base")
-    uploaded_kb = st.file_uploader("Upload Company Standards", type=["pdf", "txt"])
-    if uploaded_kb:
-        res = kb.ingest_upload(uploaded_kb)
-        st.toast(res)
-    if check_sqlite_folder_and_file_exists():
-        if st.button("Ingest Knowledge Base"):
-            kb.ingest_directory()
+    if provider == "openai":
+        st.divider()
+        if api_key:
+            st.subheader("📚 Knowledge Base")
+            uploaded_kb = st.file_uploader("Upload company specific knowledge base", type=["pdf", "txt"])
+            kb = KnowledgeEngine(api_key)
+            if uploaded_kb:
+                res = kb.ingest_upload(uploaded_kb)
+                st.toast(res)
+            if check_sqlite_folder_and_file_exists():
+                if st.button("Ingest Knowledge Base"):
+                    kb.ingest_directory()
+        else:
+            st.info("Add API Key to unlock knowledge base features.")
     
-    # Snapshots
-    st.divider()
-    snapshots = list_snapshots()
-    snapshot_count = len(snapshots)
-    st.subheader("📂 Snapshots")
-    selected_snap = st.selectbox(f"Select from {snapshot_count} available snapshots",  snapshots)
-    
-    col_load, col_del = st.columns([1, 1])
-    
-    with col_load:
-        if selected_snap != None and st.button("Load"):
-            try:
-                data = load_snapshot(selected_snap)
-                # Merge loaded data into session state
-                if data.get("provider", ""):
-                    st.session_state["project_state"]["provider"] = data["provider"]
-                st.session_state["project_state"].update(data)
-                st.rerun()
-            except Exception as e:
-                st.error(f"Load failed: {e}")
-    with col_del:
-         if selected_snap != None and st.button("Delete"):
-            if delete_snapshot(selected_snap):
-                st.toast(f"Deleted {selected_snap}")
-                time.sleep(1)
-                st.rerun()
 
 
+import streamlit as st
+import re
+import time
+import shutil
+from io import StringIO
+from pypdf import PdfReader
+from langchain_core.messages import HumanMessage, SystemMessage, AIMessage
 
 # ==========================================
-# 🚀 MAIN APP LAYOUT
+# 1. RENDER MAIN APP (Architect Studio)
 # ==========================================
+def render_main_app():
+    """
+    Main application layout with state synchronization.
+    """
+    # Ensure project state exists
+    if "project_state" not in st.session_state:
+        st.session_state["project_state"] = {}
 
-# 1. Header & Estimation
-col_title, col_metrics, buttons = st.columns([3, 1, 0.5])
-with col_title:
-    st.title("🤖 AI Architect Studio")
-with col_metrics:
-    if st.session_state["project_state"].get("total_tokens"):
-        tokens = st.session_state["project_state"]["total_tokens"]
-        cost_str = calculate_cost(tokens, provider)
-        st.metric(label="Total Cost", value=cost_str, delta=f"{tokens} Tokens")
-    else:
-        cost_metric_placeholder = st.empty()
+    # --- Header & Metrics ---
+    col_title, col_metric = st.columns([2, 1])
+    with col_title:
+        st.title("AI Architect Studio")
+        st.caption("Enterprise-grade architecture generation and scaffolding tool.")
 
+    with col_metric:
+        tokens = st.session_state["project_state"].get("total_tokens", 0)
+        # Fallback if provider not set
+        prov = st.session_state["project_state"].get("provider", "openai")
+        try:
+            cost_str = calculate_cost(tokens, prov)
+        except:
+            cost_str = "$0.00"
+        st.metric(label="Current Project Cost", value=cost_str, delta=f"{tokens:,} Tokens")
 
-with buttons:
-    if st.button("💾 Save Progress", use_container_width=True):
-        if st.session_state["project_state"].get("hld"):
-            fname = save_snapshot(st.session_state["project_state"]["project_name"], st.session_state["project_state"])
-            if fname: st.toast(f"Saved: {fname}", icon="✅")
-        else:
-            st.toast("Nothing to save yet.", icon="⚠️")
-    if st.button("🗑️ Clear Progress", use_container_width=True):
-        st.session_state["project_state"] = {
-            "hld": None, "lld": None, "scaffold": None, 
-            "diagram_code": None, "diagram_path": None, 
-            "logs": [], "total_tokens": 0, "provider": provider, 
-            "user_request": "", "project_name": "NewProject"
-        }
-        st.rerun()
-
-
-# 2. Input Area
-with st.container():
-    p_name = st.text_input("Project Name", placeholder="Provider Project Name Identifier...", value=st.session_state["project_state"]["project_name"])
-    st.session_state["project_state"]["project_name"] = p_name
+    # --- Action Toolbar ---
+    st.markdown("---")
+    col_save, col_clear, col_snap_manager = st.columns([1, 1, 2])
+    with col_save:
+        if st.button("Save Progress", use_container_width=True, type="primary"):
+            state = st.session_state["project_state"]
+            if state.get("hld"):
+                save_snapshot(state.get("project_name", "Untitled"), state)
+                st.toast(f"Project saved successfully")
+            else:
+                st.warning("No architecture data found to save. Generate HLD first.")
     
-    req_text = st.text_area("Requirements", height=100, placeholder="Describe your system...", value=st.session_state["project_state"]["user_request"])
-    st.session_state["project_state"]["user_request"] = req_text
-    
-    est_tokens = len(req_text) * 50 
-    cost_str = calculate_cost(est_tokens, provider)
-    if not st.session_state["project_state"].get("total_tokens") and cost_metric_placeholder:
-        cost_metric_placeholder.metric(label="Estimated Cost", value="~"+cost_str, delta="~"+f"{est_tokens} Tokens")
-    
-    if st.session_state["project_state"]["lld"] and st.session_state["project_state"]["hld"]:
-        button_label = "Regenerate"
-    else:
-        button_label = "Generate"
-
-    if st.button(f"{button_label} Architecture", type="primary"):
-        if not api_key and provider != "ollama":
-            st.error("API Key required.")
-        else:
-            st.session_state["running_task"] = "architecture"
+    with col_clear:
+        if st.button("Reset Project", use_container_width=True):
+            st.session_state["project_state"] = {
+                "hld": None, "lld": None, "scaffold": None, 
+                "diagram_code": None, "diagram_path": None, 
+                "logs": [], "total_tokens": 0, 
+                "provider": prov, 
+                "user_request": "", "project_name": "NewProject"
+            }
+            # Clear specific widget keys to prevent stale data
+            if "req_input_main" in st.session_state: del st.session_state["req_input_main"]
+            if "req_input_chat" in st.session_state: del st.session_state["req_input_chat"]
             st.rerun()
 
-# 3. Dynamic Progress Bar (Only visible when running)
-if st.session_state["running_task"]:
-    progress_bar = st.progress(0)
-    status_text = st.empty()
-    
-    # Prepare Graph Input
-    initial_state = st.session_state["project_state"].copy()
-    initial_state["task"] = st.session_state["running_task"]
-    initial_state["api_key"] = api_key
-    initial_state["provider"] = provider
-    
-    # Stream Graph
-    try:
-        current_weights = get_progress_config(st.session_state["running_task"])["weights"]
+    with col_snap_manager:
+        with st.popover("Manage Snapshots", use_container_width=True):
+            snapshots = list_snapshots()
+            if not snapshots:
+                st.info("No saved snapshots available.")
+            else:
+                selected_snap = st.selectbox("Select Snapshot", snapshots)
+                p_col_load, p_col_del = st.columns(2)
+                with p_col_load:
+                    if st.button("Load", use_container_width=True):
+                        try:
+                            data = load_snapshot(selected_snap)
+                            st.session_state["project_state"].update(data)
+                            st.toast(f"Snapshot loaded")
+                            time.sleep(0.5)
+                            st.rerun()
+                        except Exception as e: st.error(f"Error: {e}")
+                with p_col_del:
+                    if st.button("Delete", type="primary"):
+                        delete_snapshot(selected_snap)
+                        st.rerun()
+
+    # --- Configuration & Input Area ---
+    with st.container(border=True):
+        st.subheader("Project Configuration")
         
-        for event in app_graph.stream(initial_state):
-            for node, update in event.items():
-                # Update Session State with results
-                st.session_state["project_state"].update(update)
+        # Initialization Check
+        if "project_name" not in st.session_state["project_state"]:
+             st.session_state["project_state"]["project_name"] = "MyGenAIApp"
+
+        # Project Name
+        p_name = st.text_input(
+            "Project Identifier", 
+            placeholder="Enter a unique name...", 
+            value=st.session_state["project_state"]["project_name"]
+        )
+        st.session_state["project_state"]["project_name"] = p_name
+
+        st.markdown("##### System Requirements")
+        
+        # --- 🟢 SYNCHRONIZATION LOGIC (Main App) ---
+        # 1. Define Callback: Syncs Widget -> Global State
+        def sync_reqs_main():
+            st.session_state["project_state"]["user_request"] = st.session_state["req_input_main"]
+
+        # 2. Sync Global State -> Widget (Before Render)
+        if "req_input_main" not in st.session_state:
+            st.session_state["req_input_main"] = st.session_state["project_state"].get("user_request", "")
+        
+        # Force update from global state (handling updates from Chat Page)
+        st.session_state["req_input_main"] = st.session_state["project_state"].get("user_request", "")
+
+        req_text = st.text_area(
+            "Requirements Context", 
+            height=200, 
+            key="req_input_main", # Unique key for Main App
+            on_change=sync_reqs_main, 
+            placeholder="Briefly describe your system here, or click 'Brainstorm' to upload docs and refine..."
+        )
+        
+        # --- NEW NAVIGATION BUTTON ---
+        col_brainstorm, col_generate = st.columns([1, 1])
+        
+        with col_brainstorm:
+            if st.button("✨ Brainstorm & Fix Requirements", use_container_width=True):
+                st.session_state["active_page"] = "Chat Assistant"
+                st.rerun()
                 
-                # Update UI Progress
-                prog = min(current_weights.get(node, 0), 95)
-                progress_bar.progress(prog)
-                status_text.markdown(f"**Processing:** {node.replace('_', ' ').capitalize()}...")
+        with col_generate:
+            button_label = "Regenerate Architecture" if st.session_state["project_state"].get("hld") else "Generate Architecture"
+            if st.button(button_label, type="primary", use_container_width=True):
+                st.session_state["running_task"] = "architecture"
+                st.rerun()
         
-        progress_bar.progress(100)
-        status_text.success(f"{st.session_state['running_task'].capitalize()} Complete!")
-        time.sleep(1) 
-    except Exception as e:
-        st.error(f"Workflow failed: {e}")
-    
-    # Cleanup and Refresh
-    st.session_state["running_task"] = None
-    st.rerun()
+        st.caption("Tip: Use 'Brainstorm' to upload documents or let AI refine your ideas.")
 
-st.divider()
+    st.divider()
 
-# 4. Artifact Tabs
-t_hld, t_lld, t_code, t_diag = st.tabs(["HLD", "LLD", "🛠️ Code", "Diagrams"])
+    # --- Artifact Output Tabs ---
+    st.subheader("Project Artifacts")
+    t_hld, t_lld, t_code, t_diag = st.tabs(["High Level Design", "Low Level Design", "Source Code", "System Diagrams"])
 
-# --- HLD Tab ---
-with t_hld:
-    if st.session_state["project_state"]["hld"]:
-        display_hld(st.session_state["project_state"]["hld"], st.container())
-    else:
-        st.info("No High-Level Design generated yet.")
+    with t_hld:
+        if st.session_state["project_state"]["hld"]:
+            display_hld(st.session_state["project_state"]["hld"], st.container())
+        else:
+            st.info("No HLD generated yet.")
 
-# --- LLD Tab ---
-with t_lld:
-    if st.session_state["project_state"]["lld"]:
-        display_lld(st.session_state["project_state"]["lld"], st.container())
-    else:
-        st.info("No Low-Level Design generated yet.")
+    with t_lld:
+        if st.session_state["project_state"]["lld"]:
+            display_lld(st.session_state["project_state"]["lld"], st.container())
+        else:
+            st.info("No LLD generated yet.")
 
-# --- Code Tab ---
-with t_code:
-    col_act, col_view = st.columns([1, 4])
-    with col_act:
-        if st.session_state["project_state"]["lld"] and not st.session_state["project_state"]["scaffold"]:
-            st.write("Want to jump into building it? Click this button to receive a boilerplate code to kickstart your project.")
-            if st.button("⚡ Generate Code"):
+    with t_code:
+        if st.session_state["project_state"]["scaffold"]:
+            st.success(f"Generated {len(st.session_state['project_state']['scaffold'].starter_files)} files.")
+            for f in st.session_state["project_state"]["scaffold"].starter_files:
+                with st.expander(f.filename): st.code(f.content)
+            
+            output_dir = f"./output/{st.session_state['project_state']['project_name']}"
+            generate_scaffold(st.session_state["project_state"]["scaffold"], output_dir=output_dir)
+            shutil.make_archive(output_dir, 'zip', output_dir)
+            with open(f"{output_dir}.zip", "rb") as f:
+                st.download_button("Download ZIP", f, file_name=f"{st.session_state['project_state']['project_name']}.zip")
+        elif st.session_state["project_state"]["lld"]:
+            if st.button("Generate Code"):
                 st.session_state["running_task"] = "code"
                 st.rerun()
         else:
-            st.button("⚡ Generate Code", disabled=True, help="Requires LLD first")
+            st.warning("Generate LLD first.")
 
-    if st.session_state["project_state"]["scaffold"]:
-        st.success(f"Generated {len(st.session_state['project_state']['scaffold'].starter_files)} files.")
-        for f in st.session_state["project_state"]["scaffold"].starter_files:
-            with st.expander(f"📄 {f.filename}"):
-                st.code(f.content)
-        
-        # Download
-        output_dir = f"./output/{st.session_state['project_state']['project_name']}"
-        generate_scaffold(st.session_state["project_state"]["scaffold"], output_dir=output_dir)
-        shutil.make_archive(output_dir, 'zip', output_dir)
-        with open(f"{output_dir}.zip", "rb") as f:
-            st.download_button("⬇️ Download ZIP", f, file_name=f"{st.session_state['project_state']['project_name']}.zip")
-    else:
-        st.write("No code generated yet. Requires HLD and LLD.")
-
-with t_diag:
-    col_act_d, col_view_d = st.columns([1, 4])
-    
-    # 1. Action Column (Buttons)
-    with col_act_d:
-        # Only allow generation if HLD exists (Prerequisite)
-        if st.session_state["project_state"]["hld"]:
-            # Change label based on whether diagrams already exist
-            has_diagrams = st.session_state["project_state"]["diagram_code"] is not None
-            btn_label_d = "🎨 Regenerate Diagrams" if has_diagrams else "🎨 Generate Diagrams"
-            
-            if st.button(btn_label_d, use_container_width=True):
+    with t_diag:
+        if st.session_state["project_state"]["diagram_code"]:
+            render_mermaid(st.session_state["project_state"]["diagram_code"].system_context)
+            render_mermaid(st.session_state["project_state"]["diagram_code"].container_diagram)
+            render_mermaid(st.session_state["project_state"]["diagram_code"].data_flow)
+        elif st.session_state["project_state"]["hld"]:
+             if st.button("Generate Diagrams"):
                 st.session_state["running_task"] = "diagrams"
                 st.rerun()
         else:
-            # Show disabled button if HLD is missing
-            st.button("🎨 Generate Diagrams", disabled=True, use_container_width=True, help="Requires HLD first")
+            st.info("No diagrams available.")
 
-    # 2. View Column (Render Mermaid)
-    with col_view_d:
-        diagram_code = st.session_state["project_state"]["diagram_code"]
+
+# ==========================================
+# 2. RENDER CHAT PAGE (Brainstorming)
+# ==========================================
+def render_chat_page():
+    """
+    Chat Interface with File Upload, Sync, and Auto-Update.
+    """
+    # ==========================================
+    # 🟢 SYNC LOGIC (MUST BE AT TOP)
+    # ==========================================
+    # 1. Ensure Widget Key Exists
+    if "req_input_chat" not in st.session_state:
+        st.session_state["req_input_chat"] = st.session_state["project_state"].get("user_request", "")
+
+    # 2. Sync Global State -> Widget State (Pre-render)
+    # This captures changes made in the Main App or via AI Auto-Update on the previous run
+    current_global = st.session_state["project_state"].get("user_request", "")
+    if st.session_state["req_input_chat"] != current_global:
+        st.session_state["req_input_chat"] = current_global
+
+    # 3. Define Callback: Syncs Widget -> Global State (When user types manually)
+    def sync_reqs_chat():
+        st.session_state["project_state"]["user_request"] = st.session_state["req_input_chat"]
+
+    # ==========================================
+    # 🎨 UI RENDERING
+    # ==========================================
+    col_chat, col_controls = st.columns([2, 1], gap="medium")
+
+    # --- RIGHT COLUMN: Controls ---
+    with col_controls:
+        st.subheader("🛠️ Context & Assets")
         
-        if diagram_code:
-            st.subheader("System Context")
-            render_mermaid(diagram_code.system_context)
+        # 1. FILE UPLOADER
+        with st.expander("📂 Upload Documents", expanded=True):
+            uploaded_file = st.file_uploader(
+                "Attach specs, PDFs, or docs", 
+                type=['pdf', 'txt', 'md', 'json'],
+                key="chat_doc_uploader"  # Unique Key to prevent collisions
+            )
             
-            st.subheader("Container Diagram")
-            render_mermaid(diagram_code.container_diagram)
+            if uploaded_file:
+                try:
+                    content = ""
+                    if uploaded_file.name.lower().endswith('.pdf'):
+                        reader = PdfReader(uploaded_file)
+                        content = "\n".join([p.extract_text() for p in reader.pages])
+                    else:
+                        content = StringIO(uploaded_file.getvalue().decode("utf-8")).read()
+                    
+                    if content:
+                        btn_label = f"➕ Append {uploaded_file.name}"
+                        if st.button(btn_label, use_container_width=True):
+                            append_str = f"\n\n--- [FILE: {uploaded_file.name}] ---\n{content}\n----------------\n"
+                            
+                            # UPDATE GLOBAL STATE FIRST
+                            new_text = st.session_state["project_state"].get("user_request", "") + append_str
+                            st.session_state["project_state"]["user_request"] = new_text
+                            
+                            st.toast("File appended!", icon="📎")
+                            # RERUN IMMEDIATELY
+                            # The Sync Logic at the top of the NEXT run will update the widget key.
+                            st.rerun()
+                except Exception as e:
+                    st.error(f"Error reading file: {e}")
+
+        st.caption("Edit requirements below or ask AI to update them.")
+        
+        # 2. REQUIREMENTS EDITOR
+        new_reqs = st.text_area(
+            "Current Requirements",
+            height=400,
+            key="req_input_chat", # Unique Key for Chat Page
+            on_change=sync_reqs_chat
+        )
+        
+        st.divider()
+        
+        # 3. SAVE & RETURN
+        if st.button("💾 Save & Return to Studio", type="primary", use_container_width=True):
+            # Final sync
+            st.session_state["project_state"]["user_request"] = new_reqs
+            st.session_state["active_page"] = "Architect Studio"
+            st.toast("Requirements saved!", icon="✅")
+            time.sleep(0.5) 
+            st.rerun()
+
+    # --- LEFT COLUMN: Chat ---
+    with col_chat:
+        c_head, c_mode = st.columns([1,1])
+        with c_head: st.subheader("💬 AI Assistant")
+        with c_mode:
+            mode = st.segmented_control("Mode", ["🔍 Refine", "💡 Brainstorm"], default="🔍 Refine", label_visibility="collapsed")
+
+        if "chat_history" not in st.session_state:
+            st.session_state["chat_history"] = [AIMessage(content="Hello! I can analyze your requirements or help you brainstorm. Upload a doc on the right to get started!")]
+
+        # Chat History
+        chat_container = st.container(height=550)
+        with chat_container:
+            for msg in st.session_state["chat_history"]:
+                role = "user" if isinstance(msg, HumanMessage) else "assistant"
+                with st.chat_message(role):
+                    clean_content = re.sub(r'<UPDATE_REQ>.*?</UPDATE_REQ>', '', msg.content, flags=re.DOTALL).strip()
+                    if clean_content: st.markdown(clean_content)
+                    if "<UPDATE_REQ>" in msg.content: st.info("✅ *Requirements updated*", icon="💾")
+
+        # Chat Input
+        if prompt := st.chat_input("Ex: 'Analyze the uploaded PDF for security gaps'"):
+            with chat_container: st.chat_message("user").markdown(prompt)
+            st.session_state["chat_history"].append(HumanMessage(content=prompt))
+
+            # Prepare Context
+            reqs_text = st.session_state["project_state"].get("user_request", "")
+            hld_context = ""
+            if st.session_state["project_state"].get("hld"):
+                hld_context = f"\n[Existing HLD]:\n{st.session_state['project_state']['hld'].business_context}\n"
+
+            context_str = f"Project: {st.session_state['project_state'].get('project_name')}\nREQS:\n{reqs_text}\n{hld_context}"
+
+            # Prompt
+            base_instruction = (
+                "You are a Chief Architect. You can update requirements directly.\n"
+                "If user asks to change/add/refine reqs: OUTPUT <UPDATE_REQ> new full text </UPDATE_REQ>.\n"
+                "If user asks questions, just answer.\n"
+            )
             
-            st.subheader("Data Flow")
-            render_mermaid(diagram_code.data_flow)
-        else:
-            st.info("No diagrams generated yet.")
+            if mode == "🔍 Refine":
+                sys_p = f"{base_instruction}\nMODE: REFINE. Check for gaps (NFRs, Security, Scale).\nCONTEXT:\n{context_str}"
+            else:
+                sys_p = f"{base_instruction}\nMODE: BRAINSTORM. Be creative.\nCONTEXT:\n{context_str}"
+
+            with chat_container:
+                with st.chat_message("assistant"):
+                    api_key = st.session_state.get("api_key")
+                    provider = st.session_state["project_state"].get("provider", "openai")
+                    
+                    if not api_key:
+                        st.error("No API Key found.")
+                    else:
+                        should_rerun = False
+                        try:
+                            llm = get_llm(provider=provider, api_key=api_key)
+                            messages = [SystemMessage(content=sys_p)] + st.session_state["chat_history"][-6:]
+                            full_response = st.write_stream(llm.stream(messages))
+                            
+                            # Auto-Update Logic
+                            match = re.search(r'<UPDATE_REQ>(.*?)</UPDATE_REQ>', full_response, re.DOTALL)
+                            if match:
+                                new_text = match.group(1).strip()
+                                # Update Global State
+                                st.session_state["project_state"]["user_request"] = new_text
+                                should_rerun = True
+                            
+                            st.session_state["chat_history"].append(AIMessage(content=full_response))
+                        except Exception as e: st.error(f"Error: {e}")
+                        
+                        if should_rerun: 
+                            st.rerun()
+
+
+def run_global_workflow_if_needed():
+    """
+    Checks if a task is running. If so, executes the graph and renders 
+    a progress bar at the top of the app, regardless of which page is active.
+    """
+    if st.session_state.get("running_task"):
+        # Create a container at the very top
+        with st.container():
+            st.info(f"🚀 {st.session_state['running_task'].capitalize()} in progress...")
+            progress_bar = st.progress(0)
+            status_text = st.empty()
+            
+            # Prepare State
+            initial_state = st.session_state["project_state"].copy()
+            initial_state["task"] = st.session_state["running_task"]
+            initial_state["api_key"] = st.session_state.get("api_key")
+            initial_state["provider"] = st.session_state["project_state"].get("provider")
+            
+            try:
+                # Get Config
+                current_weights = get_progress_config(st.session_state["running_task"]).get("weights", {})
+                
+                # Run Graph
+                for event in app_graph.stream(initial_state):
+                    for node, update in event.items():
+                        st.session_state["project_state"].update(update)
+                        
+                        # Update Progress
+                        prog = min(current_weights.get(node, 0), 95)
+                        progress_bar.progress(prog)
+                        status_text.markdown(f"**Processing:** {node.replace('_', ' ').title()}...")
+                
+                progress_bar.progress(100)
+                status_text.success("Workflow completed successfully!")
+                time.sleep(1.5)
+                
+                # Clear the running task
+                st.session_state["running_task"] = None
+                st.rerun()
+                
+            except Exception as e:
+                st.error(f"Workflow execution failed: {e}")
+                st.session_state["running_task"] = None
+
+# ==========================================
+# 3. MAIN ROUTER
+# ==========================================
+def main():
+    # 1. Initialize Navigation State
+    if "active_page" not in st.session_state:
+        st.session_state["active_page"] = "Architect Studio"
+
+    # 2. Global Workflow Runner (Progress bar)
+    run_global_workflow_if_needed()
+
+    # 3. Router Logic
+    if st.session_state["active_page"] == "Architect Studio":
+        render_main_app()
+    elif st.session_state["active_page"] == "Chat Assistant":
+        render_chat_page()
+
+if __name__ == "__main__":
+    main()
