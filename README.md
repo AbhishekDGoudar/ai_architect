@@ -1,6 +1,7 @@
 #  AI Architect Studio
 
-**From Abstract Idea to Enterprise-Grade Specification — Autonomously.**
+**From Abstract Idea to Enterprise-Grade Specification — Autonomously.**\
+**Live Demo:** [https://aiarchitect.streamlit.app/](https://aiarchitect.streamlit.app/)
 
 AI Architect Studio is an **autonomous software architecture design system** that acts as your **virtual Architect**.  
 It transforms vague ideas into **production-grade architecture artifacts** using a rigorously structured, multi-agent workflow.
