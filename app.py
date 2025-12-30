@@ -10,7 +10,7 @@ import re
 from graph import app_graph
 from schemas import HighLevelDesign, LowLevelDesign
 from storage import save_snapshot, list_snapshots, load_snapshot, delete_snapshot
-from tools import generate_scaffold, download_multiple_books
+from tools import generate_scaffold, download_multiple_books, books_map
 from model_factory import get_llm
 from callbacks import TokenMeter
 from rag import KnowledgeEngine, WebKnowledgeEngine # Knowledge base engine
@@ -696,31 +696,9 @@ with st.sidebar:
     st.session_state["api_key"] = api_key
     
 
-    # Knowledge Base
-    if provider == "openai":
-        st.divider()
-        if api_key:
-            st.subheader("📚 Knowledge Base")
-            uploaded_kb = st.file_uploader("Upload company specific knowledge base", type=["pdf", "txt"])
-            kb = KnowledgeEngine(api_key)
-            if uploaded_kb:
-                res = kb.ingest_upload(uploaded_kb)
-                st.toast(res)
-            if not check_sqlite_folder_and_file_exists():
-                if st.button("Ingest Knowledge Base"):
-                    kb.ingest_directory()
-        else:
-            st.info("Add API Key to unlock knowledge base features.")
-    
 
 
-import streamlit as st
-import re
-import time
-import shutil
-from io import StringIO
-from pypdf import PdfReader
-from langchain_core.messages import HumanMessage, SystemMessage, AIMessage
+
 
 # ==========================================
 # 1. RENDER MAIN APP (Architect Studio)
@@ -959,7 +937,7 @@ def render_chat_page():
                             new_text = st.session_state["project_state"].get("user_request", "") + append_str
                             st.session_state["project_state"]["user_request"] = new_text
                             
-                            st.toast("File appended!", icon="📎")
+                            st.toast("File appended!")
                             # RERUN IMMEDIATELY
                             # The Sync Logic at the top of the NEXT run will update the widget key.
                             st.rerun()
@@ -983,7 +961,7 @@ def render_chat_page():
             # Final sync
             st.session_state["project_state"]["user_request"] = new_reqs
             st.session_state["active_page"] = "Architect Studio"
-            st.toast("Requirements saved!", icon="✅")
+            st.toast("Requirements saved!")
             time.sleep(0.5) 
             st.rerun()
 
@@ -1005,7 +983,7 @@ def render_chat_page():
                 with st.chat_message(role):
                     clean_content = re.sub(r'<UPDATE_REQ>.*?</UPDATE_REQ>', '', msg.content, flags=re.DOTALL).strip()
                     if clean_content: st.markdown(clean_content)
-                    if "<UPDATE_REQ>" in msg.content: st.info("✅ *Requirements updated*", icon="💾")
+                    if "<UPDATE_REQ>" in msg.content: st.info("*Requirements updated*")
 
         # Chat Input
         if prompt := st.chat_input("Ex: 'Analyze the uploaded PDF for security gaps'"):
@@ -1105,6 +1083,120 @@ def run_global_workflow_if_needed():
                 st.error(f"Workflow execution failed: {e}")
                 st.session_state["running_task"] = None
 
+
+def render_knowledge_page():
+    """
+    Dedicated page for managing Knowledge Base and RAG Chat.
+    """
+    st.title("📚 Knowledge Studio")
+    st.caption("Ingest engineering standards, architectural patterns, and legacy documentation here.")
+
+    # --- 1. CONFIGURATION & INGESTION ---
+    with st.expander("⚙️ Knowledge Base Management", expanded=False):
+        
+        api_key = st.session_state.get("api_key")
+        
+        if not api_key:
+            st.warning("Please configure your OpenAI API Key in the settings sidebar to use the Knowledge Engine.")
+        else:
+            kb = KnowledgeEngine(api_key)
+            
+            c1, c2 = st.columns(2)
+            
+            # Option A: Upload
+            with c1:
+                st.markdown("##### 📤 Upload File")
+                uploaded_kb = st.file_uploader("Upload PDF or TXT", type=["pdf", "txt"], key="kb_uploader")
+                if uploaded_file := uploaded_kb:
+                    if st.button("Ingest Uploaded File"):
+                        with st.spinner("Indexing..."):
+                            res = kb.ingest_upload(uploaded_file)
+                            st.success(res)
+            
+            # Option B: Bulk Ingest
+            with c2:
+                if check_sqlite_folder_and_file_exists():
+                        render_list(books_map.keys(), "The default books in the knowledge base are")
+                else:
+                    st.markdown("##### 🏗️ Bulk Ingest")
+                    if st.button("Ingest Local Directory"):
+                        st.caption(f"Scans local folder: `./knowledge_base`")
+                        with st.spinner("Processing directory..."):
+                            res = kb.ingest_directory()
+                            st.success(res)
+
+    st.divider()
+
+    # --- 2. RAG CHATBOT ---
+    st.subheader("🧠 Consult the Library")
+    st.caption("Chat specifically with your ingested documents.")
+
+    # Initialize KB Chat History
+    if "kb_chat_history" not in st.session_state:
+        st.session_state["kb_chat_history"] = [
+            AIMessage(content="Hello! I have access to your uploaded architectural standards. What do you need to look up?")
+        ]
+
+    # Display History
+    for msg in st.session_state["kb_chat_history"]:
+        role = "user" if isinstance(msg, HumanMessage) else "assistant"
+        with st.chat_message(role):
+            st.markdown(msg.content)
+
+    # Handle Input
+    if prompt := st.chat_input("Ex: 'What is our standard for retry policies in microservices?'"):
+        
+        # 1. User Message
+        st.session_state["kb_chat_history"].append(HumanMessage(content=prompt))
+        with st.chat_message("user"):
+            st.markdown(prompt)
+
+        # 2. Assistant Response
+        with st.chat_message("assistant"):
+            api_key = st.session_state.get("api_key")
+            provider = st.session_state["project_state"].get("provider", "openai")
+            
+            if not api_key:
+                st.error("API Key missing.")
+            else:
+                try:
+                    kb = KnowledgeEngine(api_key) # Re-init is cheap, connection is pooled
+                    llm = get_llm(provider=provider, api_key=api_key)
+                    
+                    # A. Retrieval
+                    with st.spinner("Searching knowledge base..."):
+                        context_str = kb.search(prompt, k=5, score_threshold=0.4)
+                    
+                    # B. Augmented Prompt
+                    if context_str:
+                        system_msg = (
+                            "You are an expert Technical Librarian.\n"
+                            "Answer the user's question using ONLY the context provided below.\n"
+                            "If the answer is not in the context, state that you cannot find it in the knowledge base.\n"
+                            "Cite the source filename if available.\n\n"
+                            f"--- CONTEXT ---\n{context_str}"
+                        )
+                        display_prefix = "📚 *Found relevant documents:*\n"
+                    else:
+                        system_msg = (
+                            "You are an expert Technical Architect.\n"
+                            "The user searched the knowledge base but NO RELEVANT DOCUMENTS were found.\n"
+                            "Answer the question using your general knowledge, but explicitly state that this is NOT from the company knowledge base."
+                        )
+                        display_prefix = "⚠️ *No relevant documents found in KB. Answering from general knowledge:*\n"
+
+                    # C. Generation
+                    messages = [SystemMessage(content=system_msg)] + st.session_state["kb_chat_history"][-4:]
+                    
+                    # Stream response
+                    full_response = st.write_stream(llm.stream(messages))
+                    
+                    # Save to history
+                    st.session_state["kb_chat_history"].append(AIMessage(content=full_response))
+                    
+                except Exception as e:
+                    st.error(f"Error: {e}")
+
 # ==========================================
 # 3. MAIN ROUTER
 # ==========================================
@@ -1113,14 +1205,38 @@ def main():
     if "active_page" not in st.session_state:
         st.session_state["active_page"] = "Architect Studio"
 
-    # 2. Global Workflow Runner (Progress bar)
+    # 2. Global Workflow Runner
     run_global_workflow_if_needed()
 
-    # 3. Router Logic
+    # 3. Sidebar Navigation
+    with st.sidebar:
+        st.title("🧭 Navigation")
+        
+        navs = ["Architect Studio"]
+        if provider == "openai":
+            navs.append("Knowledge Studio")
+        # Using Segmented Control or Radio for cleaner nav
+        page = st.radio(
+            "Go to", 
+            navs,
+            label_visibility="collapsed"
+        )
+        
+        # Sync selection
+        if page != st.session_state["active_page"]:
+            st.session_state["active_page"] = page
+            st.rerun()
+
+        st.divider()
+        # Keep your Settings/API Key inputs here...
+
+    # 4. Router Logic
     if st.session_state["active_page"] == "Architect Studio":
         render_main_app()
-    elif st.session_state["active_page"] == "Chat Assistant":
-        render_chat_page()
+    elif provider == "openai" and st.session_state["active_page"] == "Knowledge Studio":
+        render_knowledge_page()
 
 if __name__ == "__main__":
     main()
+
+    

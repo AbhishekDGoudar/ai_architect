@@ -183,8 +183,8 @@ def convert_to_raw_url(github_url):
         return raw_url
     return ""
 
-# Function to download multiple books
-def download_multiple_books(books_map = {
+
+books_map = {
         "Azure for Architect": "https://tanthiamhuat.wordpress.com/wp-content/uploads/2019/09/azure_for_architects.pdf",
         "AWS for Architect": "https://d1.awsstatic.com/whitepapers/aws-overview.pdf",
         "GCP for Architect": "https://www.citadelcloudmanagement.com/wp-content/uploads/2023/05/2a1631cf2dcc736f8330e7d54571ba13Google-Cloud-Platform-in-Action-PDFDrive-.pdf",
@@ -194,7 +194,10 @@ def download_multiple_books(books_map = {
         "Microservices Architecture": convert_to_raw_url("https://github.com/namhoangduc99/TargetOf2018/blob/master/Sam%20Newman-Building%20Microservices-O'Reilly%20Media%20(2015).pdf"),
         "Domain Driven Design": convert_to_raw_url("https://github.com/gmoral/Books/blob/master/Domain%20Driven%20Design%20Tackling%20Complexity%20in%20the%20Heart%20of%20Software%20-%20Eric%20Evans.pdf"),
         #"Clean Architecture": convert_to_raw_url("https://github.com/GunterMueller/Books-3/blob/master/Clean%20Architecture%20A%20Craftsman%20Guide%20to%20Software%20Structure%20and%20Design.pdf"),"
-       }, folder="knowledge_base"):
+       }
+
+# Function to download multiple books
+def download_multiple_books(books_map = books_map, folder="knowledge_base"):
     for book_name, book_url in books_map.items():
         download_book(book_name, book_url, folder)
 
