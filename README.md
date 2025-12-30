@@ -1,89 +1,299 @@
-# AI Architect Studio
+#  AI Architect Studio
 
-Welcome to AI Architect Studio. This project is an autonomous design system that converts simple requirements into enterprise grade architecture documents. We bridge the gap between abstract ideas and concrete implementation plans using a team of AI agents.
+**From Abstract Idea to Enterprise-Grade Specification — Autonomously.**
 
-**Live Demo:** [https://aiarchitect.streamlit.app/](https://aiarchitect.streamlit.app/)
+AI Architect Studio is an **autonomous software architecture design system** that acts as your **virtual Architect**.  
+It transforms vague ideas into **production-grade architecture artifacts** using a rigorously structured, multi-agent workflow.
 
-## What It Does
-Building software architecture is complex. You need to think about business goals, data models, security compliance, and operational readiness all at once. This tool handles that cognitive load for you.
+Unlike standard chatbots that generate unverified text, AI Architect Studio **researches, critiques, validates, and iterates** on architecture decisions until they meet enterprise-quality standards.
 
-You provide a simple prompt, like "Build a ride sharing app," and our system orchestrates a team of specialized AI agents to generate a comprehensive 22 point design document.
+---
 
-## The Agent Team
-We use a multi agent workflow to ensure quality and depth.
+## What Does It Do?
 
-* **Engineering Manager**: Drafts the High Level Design (HLD) and creates structural diagrams.
-* **Security Specialist**: Intervenes to harden authentication, authorization, and compliance strategies.
-* **Team Lead**: Translates the high level strategy into a Low Level Design (LLD), focusing on APIs and schemas.
-* **Architecture Judge**: The quality control layer. This agent reviews the work of others, verifies diagram syntax, and rejects the design if it fails to meet standards.
-* 
-## Key Features
-* **Multi-Agent Orchestration:** A specialized team of 6+ AI agents (Manager, Lead, Security, Judge, Visuals, Scaffolder) that collaborate to build your design.
-* **RAG & Web Search:** Ground your architecture in reality. Upload your company's PDF standards or let the agents search the web for the latest tech stack compatibility.
-* **Self-Healing Diagrams:** Includes a dedicated "Diagram Validator" loop that automatically fixes broken Mermaid.js syntax to ensure your charts always render correctly.
-* **Project Scaffolding:** Goes beyond documentation. Generates a downloadable ZIP containing `docker-compose.yml`, `requirements.txt`, and boilerplate code based on the generated design.
-* **Strict Structural Integrity:** Uses **Pydantic** to enforce 100% valid JSON outputs, ensuring no missing fields in your API specs or data models.
-* **Cost Transparency:** Real-time token tracking and cost estimation for OpenAI, Gemini, and Claude models.
+From a single prompt like:
 
+> *“Build a scalable ride-sharing platform”*
 
-## Tech Stack
-We prioritized tools that offer reliability and type safety.
+AI Architect Studio generates:
 
-* **LangGraph**: For orchestrating the stateful, cyclic workflow between agents.
-* **Streamlit**: For the interactive frontend and visualization.
-* **Pydantic**: For strict schema validation, ensuring our AI outputs structured data rather than free text.
-* **Mermaid.js**: For rendering dynamic architecture diagrams as code.
-* **LLM Backend**: Configurable support for Gemini, OpenAI, and Claude.
+- ✅ **22-point High-Level Design (HLD)**
+- ✅ **Low-Level Design (LLD)** with APIs, schemas, and components
+- ✅ **Self-healing Architecture Diagrams** (Mermaid.js)
+- ✅ **Ready-to-run Code Scaffolding**
+- ✅ **Docker + project structure**
+- ✅ **Security & compliance review**
 
-## How to Run Locally
-You can get this system running on your own machine in just a few minutes.
+All done **autonomously** using a graph-based multi-agent system.
 
-**1. Clone and Setup**
-First, clone the repository to your local machine and navigate into the folder.
+---
 
-**2. Install Dependencies**
-Ensure you have Python 3.11 or higher installed. We recommend using `uv` for lightning fast installations, but standard `pip` works perfectly as well.
+## Why AI Architect Studio?
 
-* Using pip:
-`pip install .`
+Designing software is *cognitive heavy-lifting*:
 
-* Using uv:
-`uv sync`
+- Scalability vs cost
+- Security vs usability
+- Compliance vs speed
+- Data models vs APIs
 
-**3. Configure Environment**
-You need to set up your environment variables to allow the agents to talk to the LLMs. Create a file named `.env` in the root directory and add your API keys.
+Most AI tools fail because they lack **structure, validation, and feedback loops**.
 
-`OPENAI_API_KEY=sk-...`
-`GOOGLE_API_KEY=AIza...`
+AI Architect Studio solves this with **three core innovations**.
 
-**4. Launch the App**
-Start the application interface with a single command.
+---
 
-`streamlit run app.py`
+## Core Solutions
 
-## Accomplishments
-* **LLM as Judge Evaluation**: We implemented a rigorous strict critic agent (The Judge) that evaluates every design against architectural principles. It is not just a rubber stamp; it forces the other agents to retry and fix their mistakes if the logic or diagrams are flawed.
-* **Self Healing Workflows**: If the Judge agent detects a broken diagram or a missing security requirement, it sends the work back to the Manager with specific feedback for correction.
-* **Structured Output**: Unlike chat interfaces that give you walls of text, our system outputs strictly typed JSON objects that map to real world architectural artifacts.
+###  The “Judge” Loop (Adversarial Review)
 
-## Phase 2 and Roadmap
-We are actively working on expanding the capabilities of the studio. Here are the things we intend to do next:
+A dedicated **Judge Agent** critiques every design artifact.
 
-* **Automated Code Generation**: Moving beyond design documents to generating the actual boilerplate code for the services defined in the LLD.
-* **Infrastructure as Code**: Automatically generating Terraform or Pulumi scripts to deploy the architecture to AWS or Google Cloud.
-* **IDE Integration**: Building a VS Code extension so developers can generate designs directly within their editor.
-* **Jira Export**: Converting the implementation plan into actionable tickets in your project management tool.
+- Detects security gaps
+- Flags architectural inconsistencies
+- Rejects weak designs
+- Forces regeneration until quality passes
 
-## Frequently Asked Questions
+> No silent hallucinations. Everything is reviewed.
 
-**How much does a run cost?**
-The cost depends on the model provider you choose. A full run typically consumes about 10k tokens due to the depth of the 22 point framework. We provide a cost estimator in the UI before you run.
+---
 
-**Can I save my designs?**
-Yes. The application includes a snapshot system that allows you to save, load, and delete architecture runs locally.
+###  Strict Schema Enforcement (Zero Fluff)
 
-**Why did you choose Pydantic over standard JSON?**
-Pydantic allows us to enforce architectural standards at the code level. If an agent tries to skip a required field like "Disaster Recovery," the validation layer catches it before it even reaches the user.
+All agent outputs are validated using **Pydantic schemas**:
 
-**Is the code production ready?**
-The LLD provides a solid blueprint, including API specs and database schemas. While it is not copy paste executable code yet (see Phase 2), it provides the exact specifications a senior engineer would need to start coding immediately.
+- APIs → valid JSON
+- DB schemas → structured tables
+- Components → typed contracts
+
+This guarantees **machine-usable outputs**, not chatty prose.
+
+---
+
+###  Self-Healing Diagrams
+
+Architecture diagrams are generated using **Mermaid.js**.
+
+If a diagram fails to render:
+- A **Fixer Agent** detects the error
+- Captures Mermaid syntax issues
+- Regenerates until it renders correctly
+
+> Diagrams that *actually render*, every time.
+
+---
+
+## 🧠 The Agent Team
+
+Agents collaborate using a **directed cyclic graph** (LangGraph).
+
+| Agent | Role | Responsibility |
+|-----|-----|---------------|
+| Engineering Manager | Strategy | Drafts the High-Level Design (HLD) |
+| Security Specialist | Compliance | Zero Trust, IAM, SOC2, GDPR |
+| Team Lead | Implementation | Converts HLD → LLD |
+| The Judge | Quality Control | Rejects flawed designs |
+| Visual Architect | Diagrams | Mermaid architecture diagrams |
+| Scaffolder | DevOps | Codebase & Docker generation |
+
+---
+
+## ✨ Key Features
+
+###  RAG Knowledge Base
+Upload your **company standards** (PDF/TXT):
+
+- Engineering guidelines
+- Security rules
+- Architecture playbooks
+
+Agents will **comply with your internal rules**.
+
+---
+
+### 💰 Cost & Token Transparency
+
+Real-time tracking for:
+- OpenAI (GPT-4o)
+- Google Gemini
+- Anthropic Claude
+
+See **token usage & cost estimates** live.
+
+---
+
+###  Brainstorming Mode
+
+A lightweight chat interface to:
+- Clarify requirements
+- Explore ideas
+- Refine scope
+
+Before triggering full architecture generation.
+
+---
+
+###  Project Snapshots
+
+- Save architecture states
+- Resume later
+- Load or delete past designs
+
+All stored locally.
+
+---
+
+## Installation & Setup
+
+### Prerequisites
+- Python **3.11+**
+- At least one LLM API key:
+  - OpenAI
+  - Google Gemini
+  - Anthropic
+
+---
+
+###  Clone the Repository
+
+```bash
+git clone https://github.com/yourusername/ai-architect-studio.git
+cd ai-architect-studio
+```
+
+---
+
+###  Install Dependencies
+
+Using **pip**:
+```bash
+pip install .
+```
+
+Using **uv** (recommended):
+```bash
+uv sync
+```
+
+---
+
+###  Configure Environment
+
+Create a `.env` file in the root directory:
+
+```env
+OPENAI_API_KEY=sk-...
+GOOGLE_API_KEY=AIza...
+ANTHROPIC_API_KEY=sk-ant-...
+```
+
+(You can also enter keys directly in the UI.)
+
+---
+
+###  Run the Application
+
+```bash
+streamlit run app.py
+```
+
+---
+
+## 📸 Usage Workflow
+
+###  Define Requirements
+- Use **Chat Assistant**
+- Upload PDFs or type rough ideas
+- Refine into a clear specification using brainstorming mode
+
+---
+
+###  Generate Architecture
+- Open **Architect Studio**
+- Click **Generate Architecture**
+- Watch agents collaborate in real time
+- Judge agent approves or rejects
+
+---
+
+###  Review Artifacts
+
+- **HLD Tab** → 22-point strategic design
+- **LLD Tab** → APIs, schemas, logic
+- **Diagrams Tab** → Auto-generated visuals
+
+---
+
+###  Export Code
+
+Click **Generate Code** to download:
+- Project skeleton
+- `requirements.txt`
+- `docker-compose.yml`
+
+---
+
+## ❓ FAQ
+
+### Is this just a ChatGPT wrapper?
+**No.**  
+This is a **graph-based autonomous system** where agents exchange **structured data objects**, not free text.
+
+Includes:
+- Validation loops
+- Adversarial review
+- Automated retries
+- Diagram verification
+
+---
+
+### Can I use my own documentation?
+Yes.  
+Upload PDFs or TXT files in **Knowledge Studio**.  
+Agents will reference them during design.
+
+---
+
+### How much does a run cost?
+
+Typical full run (HLD + LLD + Diagrams):
+
+| Model | Approx Cost |
+|----|----|
+| Gemini Flash | ~$0.01 |
+| GPT-4o | ~$0.10 – $0.50 |
+| Claude 3.5 | ~$0.50 – $1.00|
+
+Costs shown live in the UI.
+
+---
+
+### Diagrams aren’t rendering. What now?
+The **Self-Healing Diagram Loop** retries automatically.
+
+If it persists:
+- Click **Regenerate Diagrams**
+- Visual Architect will retry from scratch
+
+---
+
+## Roadmap
+
+- [ ] VS Code Extension
+- [ ] Terraform / IaC Export
+- [ ] Jira Ticket Generation
+- [ ] Cloud Deployment Mode
+
+---
+
+## Built With
+
+- LangChain
+- LangGraph
+- Streamlit
+- Pydantic
+- Mermaid.js
+
+---
+
+**AI Architect Studio — design software like a CTO, not a chatbot.**
