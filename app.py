@@ -706,7 +706,7 @@ with st.sidebar:
             if uploaded_kb:
                 res = kb.ingest_upload(uploaded_kb)
                 st.toast(res)
-            if check_sqlite_folder_and_file_exists():
+            if not check_sqlite_folder_and_file_exists():
                 if st.button("Ingest Knowledge Base"):
                     kb.ingest_directory()
         else:
