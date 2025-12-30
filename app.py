@@ -791,7 +791,6 @@ def render_main_app():
         )
         st.session_state["project_state"]["project_name"] = p_name
 
-        st.markdown("##### System Requirements")
         
         # --- 🟢 SYNCHRONIZATION LOGIC (Main App) ---
         # 1. Define Callback: Syncs Widget -> Global State
@@ -806,7 +805,7 @@ def render_main_app():
         st.session_state["req_input_main"] = st.session_state["project_state"].get("user_request", "")
 
         req_text = st.text_area(
-            "Requirements Context", 
+            "System Requirements", 
             height=200, 
             key="req_input_main", # Unique key for Main App
             on_change=sync_reqs_main, 
