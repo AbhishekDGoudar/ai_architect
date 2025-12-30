@@ -792,7 +792,7 @@ def render_main_app():
         st.session_state["project_state"]["project_name"] = p_name
 
         
-        # --- 🟢 SYNCHRONIZATION LOGIC (Main App) ---
+        # --- SYNCHRONIZATION LOGIC (Main App) ---
         # 1. Define Callback: Syncs Widget -> Global State
         def sync_reqs_main():
             st.session_state["project_state"]["user_request"] = st.session_state["req_input_main"]
@@ -1211,21 +1211,27 @@ def main():
     with st.sidebar:
         st.title("🧭 Navigation")
         
+        
+        # Sync selection
         navs = ["Architect Studio"]
         if provider == "openai":
             navs.append("Knowledge Studio")
-        # Using Segmented Control or Radio for cleaner nav
-        page = st.radio(
-            "Go to", 
-            navs,
-            label_visibility="collapsed"
-        )
-        
-        # Sync selection
-        if page != st.session_state["active_page"]:
-            st.session_state["active_page"] = page
-            st.rerun()
 
+        # DYNAMICALLY ADD CHAT if it is the active page
+        if st.session_state["active_page"] == "Chat Assistant":
+            navs.append("Chat Assistant") 
+
+        # Now st.radio logic is simple and bug-free:
+        try:
+            nav_index = navs.index(st.session_state["active_page"])
+        except ValueError:
+            nav_index = 0 
+
+        selected_page = st.radio("Go to", navs, index=nav_index)
+
+        if selected_page != st.session_state["active_page"]:
+            st.session_state["active_page"] = selected_page
+            st.rerun()
         st.divider()
         # Keep your Settings/API Key inputs here...
 
@@ -1234,6 +1240,8 @@ def main():
         render_main_app()
     elif provider == "openai" and st.session_state["active_page"] == "Knowledge Studio":
         render_knowledge_page()
+    elif st.session_state["active_page"] == "Chat Assistant":
+        render_chat_page()
 
 if __name__ == "__main__":
     main()
