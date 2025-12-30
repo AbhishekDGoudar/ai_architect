@@ -715,7 +715,7 @@ def render_main_app():
     col_title, col_metric = st.columns([2, 1])
     with col_title:
         st.title("AI Architect Studio")
-        st.caption("Enterprise-grade architecture generation and scaffolding tool.")
+        st.caption("AI Architect Studio transforms weeks of planning into minutes by standardizing architecture and generating base code. We designed this to support your product managers and engineers. The platform employs specialized AI agents acting as a virtual software team to analyze and align outputs with your specific requirements. While the tool delivers speed, human judgment remains essential for final validation.")
 
     with col_metric:
         tokens = st.session_state["project_state"].get("total_tokens", 0)
