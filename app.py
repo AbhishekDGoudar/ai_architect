@@ -771,7 +771,7 @@ def render_main_app():
                             st.rerun()
                         except Exception as e: st.error(f"Error: {e}")
                 with p_col_del:
-                    if st.button("Delete", type="primary"):
+                    if st.button("Delete", type="primary", disabled=True):
                         delete_snapshot(selected_snap)
                         st.rerun()
 
