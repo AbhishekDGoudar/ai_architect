@@ -5,7 +5,7 @@ import datetime
 from schemas import (
     HighLevelDesign, LowLevelDesign, JudgeVerdict, 
     SecurityCompliance, ArchitectureDiagrams, 
-    RefinedDesign, DiagramValidationResult,
+    RefinedDesign, DiagramValidationResult, EvaluationResult,
     ProjectStructure
 )
 from callbacks import TokenMeter
@@ -132,6 +132,32 @@ def reiteration_agent(judge: JudgeVerdict, hld: HighLevelDesign, lld: LowLevelDe
     
     return structured_llm.invoke(
         [("system", system_msg), ("human", "Refine the complete design iteratively.")],
+        config={"callbacks": [meter]}
+    )
+
+def evaluation_agent(hld: HighLevelDesign, lld: LowLevelDesign, verdict: JudgeVerdict, llm: BaseChatModel, meter: TokenMeter):
+    """Evaluates the final design quality after judge approval or max retries."""
+    system_msg = """
+    You are an Evaluation Agent scoring architecture artifacts.
+
+    SCORE EACH CATEGORY 1-5 (1=poor, 5=excellent):
+    - completeness_score: Required fields covered with sufficient detail.
+    - consistency_score: HLD and LLD alignment.
+    - security_score: Coverage of security requirements and mitigations.
+    - citation_quality_score: Relevance and sufficiency of citations.
+    - actionability_score: Practicality for implementation.
+
+    Provide an overall verdict as "Pass" or "Needs Work" and a concise critique with top fixes.
+    """
+
+    structured_llm = llm.with_structured_output(EvaluationResult)
+    user_content = (
+        f"HLD:\n{hld.model_dump_json()}\n\n"
+        f"LLD:\n{lld.model_dump_json()}\n\n"
+        f"Judge Verdict:\n{verdict.model_dump_json()}"
+    )
+    return structured_llm.invoke(
+        [("system", system_msg), ("human", user_content)],
         config={"callbacks": [meter]}
     )
 

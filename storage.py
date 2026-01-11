@@ -7,7 +7,8 @@ from typing import List, Dict, Any, Optional
 try:
     from schemas import (
         HighLevelDesign, LowLevelDesign, JudgeVerdict, 
-        ProjectStructure, ArchitectureDiagrams, DiagramValidationResult
+        ProjectStructure, ArchitectureDiagrams, DiagramValidationResult,
+        EvaluationResult
     )
 except ImportError:
     # Fallback if schemas aren't found
@@ -17,6 +18,7 @@ except ImportError:
     ProjectStructure = None
     ArchitectureDiagrams = None
     DiagramValidationResult = None
+    EvaluationResult = None
 
 SNAPSHOT_DIR = "snapshots"
 
@@ -51,6 +53,7 @@ def save_snapshot(project_name: str, state: Dict):
         "diagram_code": _to_dict(state.get("diagram_code")),
         "diagram_path": state.get("diagram_path"),
         "diagram_validation": _to_dict(state.get("diagram_validation")),
+        "evaluation": _to_dict(state.get("evaluation")),
         "metrics": state.get("metrics", {}),
         "total_tokens": state.get("total_tokens", 0),
         "logs": state.get("logs", []),
@@ -110,6 +113,10 @@ def load_snapshot(filename: str) -> Dict:
     if DiagramValidationResult and data.get("diagram_validation"):
         try: data["diagram_validation"] = DiagramValidationResult(**data["diagram_validation"])
         except Exception as e: print(f"Failed to reconstruct Validation: {e}")
+
+    if EvaluationResult and data.get("evaluation"):
+        try: data["evaluation"] = EvaluationResult(**data["evaluation"])
+        except Exception as e: print(f"Failed to reconstruct Evaluation: {e}")
 
     return data
 

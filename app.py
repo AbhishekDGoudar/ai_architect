@@ -43,6 +43,7 @@ if "project_state" not in st.session_state:
         "scaffold": None,
         "diagram_code": None,
         "diagram_path": None,
+        "evaluation": None,
         "logs": [],
         "total_tokens": 0,
         "provider": "gemini", # Default
@@ -153,6 +154,21 @@ def render_mermaid(code: str, height=500):
     </script>
     """
     components.html(html_code, height=height)
+
+def render_evaluation(evaluation):
+    if not evaluation:
+        st.info("No evaluation available yet.")
+        return
+
+    st.subheader("Evaluation Summary")
+    cols = st.columns(5)
+    cols[0].metric("Completeness", evaluation.completeness_score)
+    cols[1].metric("Consistency", evaluation.consistency_score)
+    cols[2].metric("Security", evaluation.security_score)
+    cols[3].metric("Citations", evaluation.citation_quality_score)
+    cols[4].metric("Actionability", evaluation.actionability_score)
+    st.markdown(f"**Verdict:** {evaluation.verdict}")
+    st.markdown(f"**Critique:** {evaluation.critique}")
 
 
 def display_hld(hld: HighLevelDesign, container):
@@ -671,7 +687,7 @@ def display_lld(lld: LowLevelDesign, container):
 def get_progress_config(task: str):
     """Progress bar configuration."""
     if task == "architecture":
-        return {"weights": {"manager": 10, "security": 30, "team_lead": 60, "judge": 80, "refiner": 70, "end": 100}}
+        return {"weights": {"manager": 10, "security": 30, "team_lead": 60, "judge": 80, "refiner": 70, "evaluation": 90, "end": 100}}
     elif task == "diagrams":
         return {"weights": {"visuals": 30, "fix_diagram": 60, "validator": 90, "end": 100}}
     elif task == "code":
@@ -694,6 +710,26 @@ with st.sidebar:
     
     api_key = st.text_input("API Key", type="password", value=st.session_state.get("api_key", ""))
     st.session_state["api_key"] = api_key
+
+    st.markdown("### LangSmith")
+    enable_langsmith = st.checkbox("Enable LangSmith Tracing", value=st.session_state.get("enable_langsmith", False))
+    st.session_state["enable_langsmith"] = enable_langsmith
+    langsmith_api_key = st.text_input(
+        "LangSmith API Key",
+        type="password",
+        value=st.session_state.get("langsmith_api_key", "")
+    )
+    st.session_state["langsmith_api_key"] = langsmith_api_key
+    langsmith_project = st.text_input(
+        "LangSmith Project",
+        value=st.session_state.get("langsmith_project", "ai-architect-studio")
+    )
+    st.session_state["langsmith_project"] = langsmith_project
+
+    if enable_langsmith and langsmith_api_key:
+        os.environ["LANGCHAIN_TRACING_V2"] = "true"
+        os.environ["LANGCHAIN_API_KEY"] = langsmith_api_key
+        os.environ["LANGCHAIN_PROJECT"] = langsmith_project
     
 
 
@@ -832,7 +868,9 @@ def render_main_app():
 
     # --- Artifact Output Tabs ---
     st.subheader("Project Artifacts")
-    t_hld, t_lld, t_code, t_diag = st.tabs(["High Level Design", "Low Level Design", "Source Code", "System Diagrams"])
+    t_hld, t_lld, t_code, t_diag, t_eval = st.tabs(
+        ["High Level Design", "Low Level Design", "Source Code", "System Diagrams", "Evaluation"]
+    )
 
     with t_hld:
         if st.session_state["project_state"]["hld"]:
@@ -875,6 +913,9 @@ def render_main_app():
                 st.rerun()
         else:
             st.info("No diagrams available.")
+
+    with t_eval:
+        render_evaluation(st.session_state["project_state"].get("evaluation"))
 
 
 # ==========================================

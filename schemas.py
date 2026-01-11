@@ -182,6 +182,19 @@ class HighLevelDesign(BaseModel):
     citations: List[Citation]
 
 # ==========================================
+# 🧪 EVALUATION RESULTS
+# ==========================================
+
+class EvaluationResult(BaseModel):
+    completeness_score: int = Field(description="Score 1-5 for coverage of required fields.")
+    consistency_score: int = Field(description="Score 1-5 for alignment between HLD and LLD.")
+    security_score: int = Field(description="Score 1-5 for security posture and gaps.")
+    citation_quality_score: int = Field(description="Score 1-5 for relevance and quality of citations.")
+    actionability_score: int = Field(description="Score 1-5 for implementation readiness.")
+    verdict: str = Field(description="Overall verdict: Pass/Needs Work.")
+    critique: str = Field(description="Concise evaluator critique with top fixes.")
+
+# ==========================================
 # 🧠 SECTION 2: LOW-LEVEL DESIGN (LLD)
 # ==========================================
 
