@@ -3,7 +3,8 @@ from datetime import date
 from langgraph.graph import StateGraph, END, START
 from schemas import (
     HighLevelDesign, LowLevelDesign, JudgeVerdict, 
-    DiagramValidationResult, ArchitectureDiagrams, ProjectStructure
+    DiagramValidationResult, ArchitectureDiagrams, ProjectStructure,
+    EvaluationResult
 )
 import agents
 import tools
@@ -27,6 +28,7 @@ class AgentState(TypedDict):
     diagram_path: Optional[str]
     diagram_validation: Optional[DiagramValidationResult]
     scaffold: Optional[ProjectStructure]
+    evaluation: Optional[EvaluationResult]
     retry_count: int
     total_tokens: int
     logs: List[Dict]
@@ -99,6 +101,15 @@ def refiner_node(state: AgentState):
         "logs": [{"role": "Refiner", "message": "Design refined"}]
     }
 
+def evaluation_node(state: AgentState):
+    llm = get_llm(state['provider'], state['api_key'], "fast")
+    meter = TokenMeter()
+    evaluation = agents.evaluation_agent(state['hld'], state['lld'], state['verdict'], llm, meter)
+    return {
+        "evaluation": evaluation,
+        "total_tokens": state.get("total_tokens", 0) + meter.total_tokens,
+        "logs": [{"role": "Evaluation", "message": f"Evaluation verdict: {evaluation.verdict}"}]
+    }
 
 
 def visuals_node(state: AgentState):
@@ -173,6 +184,7 @@ workflow.add_node("security", security_node)
 workflow.add_node("team_lead", lead_node)
 workflow.add_node("judge", judge_node)
 workflow.add_node("refiner", refiner_node)
+workflow.add_node("evaluation", evaluation_node)
 workflow.add_node("visuals", visuals_node)
 workflow.add_node("scaffold", scaffold_node)
 
@@ -194,9 +206,10 @@ workflow.add_edge("team_lead", "judge")
 workflow.add_conditional_edges(
     "judge",
     check_quality,
-    {"rejected": "refiner", "approved": END, "max_retries": END}
+    {"rejected": "refiner", "approved": "evaluation", "max_retries": "evaluation"}
 )
 workflow.add_edge("refiner", "judge")
+workflow.add_edge("evaluation", END)
 
 # Diagram flow
 workflow.add_edge("visuals", END)  # Already validated inside visuals_node
